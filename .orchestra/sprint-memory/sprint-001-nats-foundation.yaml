@@ -1,0 +1,11 @@
+version: '1.0'
+sprintId: sprint-001-nats-foundation
+sprintName: sprint-001-nats-foundation
+goals: []
+architectureDecisions: []
+taskSummaries: []
+implementorPatterns: []
+compactionCount: 0
+lastCompactedAt: null
+createdAt: '2026-02-23T09:55:04.539Z'
+updatedAt: '2026-02-23T09:55:04.539Z'
