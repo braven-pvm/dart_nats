@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "orchestra-orc": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\Marius\\.vscode-insiders\\extensions\\forcegage.orchestra-extension-1.1.0\\dist\\mcp-server\\index.js",
+        "--role=orchestrator"
+      ],
+      "env": {
+        "ORCHESTRA_WORKSPACE": "x:\\repositories\\dart_nats"
+      }
+    },
+    "orchestra-imp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\Marius\\.vscode-insiders\\extensions\\forcegage.orchestra-extension-1.1.0\\dist\\mcp-server\\index.js",
+        "--role=implementor"
+      ],
+      "env": {
+        "ORCHESTRA_WORKSPACE": "x:\\repositories\\dart_nats"
+      }
+    },
+    "orchestra-ctl": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "c:\\Users\\Marius\\.vscode-insiders\\extensions\\forcegage.orchestra-extension-1.1.0\\dist\\mcp-server\\index.js",
+        "--role=controller"
+      ],
+      "env": {
+        "ORCHESTRA_WORKSPACE": "x:\\repositories\\dart_nats"
+      }
+    }
+  },
+  "generatedBy": "Orchestra VS Code Extension",
+  "version": "1.1.0",
+  "timestamp": "2026-02-23T09:32:42.298Z"
+}

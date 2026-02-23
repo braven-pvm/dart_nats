@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:nats_dart/nats_dart.dart';
 
 void main() async {
