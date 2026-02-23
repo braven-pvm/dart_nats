@@ -1,5 +1,7 @@
 /// Connection options for NATS.
 class ConnectOptions {
+  static const Object _unset = Object();
+
   const ConnectOptions({
     this.name,
     this.maxReconnectAttempts = -1,
@@ -55,19 +57,35 @@ class ConnectOptions {
   ///
   /// Throws [ArgumentError] if incompatible auth modes are specified.
   void validate() {
+    // Auth methods: token, user/pass, or JWT+NKey (single method)
+    final hasAuthToken = authToken != null;
+    final hasUserPass = user != null && pass != null;
+    final hasJwt = jwt != null;
+    final hasNkeyPath = nkeyPath != null;
+    final hasJwtAuth = hasJwt || hasNkeyPath;
+
+    // Validate that jwt and nkeyPath are both set together or both null
+    if (hasJwt != hasNkeyPath) {
+      throw ArgumentError(
+        'JWT authentication requires both jwt and nkeyPath to be set together',
+      );
+    }
+
     final authCount = [
-      authToken != null,
-      (user != null && pass != null),
-      jwt != null,
-      nkeyPath != null,
+      hasAuthToken,
+      hasUserPass,
+      hasJwtAuth,
     ].where((x) => x).length;
 
     if (authCount > 1) {
-      throw ArgumentError('Only one authentication method can be specified: '
-          'token, user/pass, JWT, or NKey');
+      throw ArgumentError(
+        'Only one authentication method can be specified: '
+        'token, user/pass, or JWT+NKey',
+      );
     }
   }
 
+  /// Create a copy with some fields replaced.
   ConnectOptions copyWith({
     String? name,
     int? maxReconnectAttempts,
@@ -76,11 +94,11 @@ class ConnectOptions {
     int? maxPingOut,
     bool? noEcho,
     String? inboxPrefix,
-    String? authToken,
-    String? user,
-    String? pass,
-    String? jwt,
-    String? nkeyPath,
+    Object? authToken = _unset,
+    Object? user = _unset,
+    Object? pass = _unset,
+    Object? jwt = _unset,
+    Object? nkeyPath = _unset,
   }) {
     return ConnectOptions(
       name: name ?? this.name,
@@ -90,11 +108,11 @@ class ConnectOptions {
       maxPingOut: maxPingOut ?? this.maxPingOut,
       noEcho: noEcho ?? this.noEcho,
       inboxPrefix: inboxPrefix ?? this.inboxPrefix,
-      authToken: authToken ?? this.authToken,
-      user: user ?? this.user,
-      pass: pass ?? this.pass,
-      jwt: jwt ?? this.jwt,
-      nkeyPath: nkeyPath ?? this.nkeyPath,
+      authToken: authToken == _unset ? this.authToken : (authToken as String?),
+      user: user == _unset ? this.user : (user as String?),
+      pass: pass == _unset ? this.pass : (pass as String?),
+      jwt: jwt == _unset ? this.jwt : (jwt as String?),
+      nkeyPath: nkeyPath == _unset ? this.nkeyPath : (nkeyPath as String?),
     );
   }
 }

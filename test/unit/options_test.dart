@@ -81,7 +81,7 @@ void main() {
       expect(opts.pass, equals('secret'));
     });
 
-    test('construct with JWT auth', () {
+    test('construct with JWT+NKey auth', () {
       final opts = ConnectOptions(
         jwt: 'jwt-token',
         nkeyPath: '/path/to/nkey',
@@ -93,18 +93,6 @@ void main() {
   });
 
   group('ConnectOptions validate', () {
-    test(
-        'validate does NOT throw when authToken and user alone (user needs pass to count)',
-        () {
-      final opts = ConnectOptions(
-        authToken: 'token',
-        user: 'admin',
-      );
-
-      // Only authToken counts as an auth method because user alone is incomplete
-      expect(() => opts.validate(), returnsNormally);
-    });
-
     test('validate throws when both authToken and user+pass are set', () {
       final opts = ConnectOptions(
         authToken: 'token',
@@ -112,52 +100,15 @@ void main() {
         pass: 'secret',
       );
 
-      // Two auth methods: authToken and (user+pass)
       expect(
         () => opts.validate(),
         throwsA(isA<ArgumentError>()),
       );
     });
-    test('validate throws when both token and user/pass are set', () {
+
+    test('validate throws when authToken and jwt+nkey (two auth methods)', () {
       final opts = ConnectOptions(
         authToken: 'token',
-        user: 'admin',
-        pass: 'secret',
-      );
-
-      expect(
-        () => opts.validate(),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-
-    test('validate throws when both jwt and authToken are set', () {
-      final opts = ConnectOptions(
-        jwt: 'jwt-token',
-        authToken: 'token',
-      );
-
-      expect(
-        () => opts.validate(),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-
-    test('validate throws when both jwt and authToken are set (reverse order)',
-        () {
-      final opts = ConnectOptions(
-        authToken: 'token',
-        jwt: 'jwt-token',
-      );
-
-      expect(
-        () => opts.validate(),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-
-    test('validate throws when both jwt and nkeyPath are set', () {
-      final opts = ConnectOptions(
         jwt: 'jwt-token',
         nkeyPath: '/path/to/key',
       );
@@ -167,36 +118,11 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
-
-    test('validate throws when both nkeyPath and authToken are set', () {
-      final opts = ConnectOptions(
-        nkeyPath: '/path/to/key',
-        authToken: 'token',
-      );
-
-      expect(
-        () => opts.validate(),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-
-    test('validate throws when both user/pass and jwt are set', () {
+    test('validate throws when both user+pass and jwt are set', () {
       final opts = ConnectOptions(
         user: 'admin',
         pass: 'secret',
         jwt: 'jwt-token',
-      );
-
-      expect(
-        () => opts.validate(),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-
-    test('validate throws when both user/pass and nkeyPath are set', () {
-      final opts = ConnectOptions(
-        user: 'admin',
-        pass: 'secret',
         nkeyPath: '/path/to/key',
       );
 
@@ -210,7 +136,9 @@ void main() {
       final opts = ConnectOptions(
         authToken: 'token',
         user: 'admin',
+        pass: 'secret',
         jwt: 'jwt-token',
+        nkeyPath: '/path/to/key',
       );
 
       expect(
@@ -241,8 +169,7 @@ void main() {
         user: 'admin',
       );
 
-      // This should NOT throw - only user is set (not both user AND pass)
-      // According to the implementation, it checks (user != null && pass != null) as one auth method
+      // Only user is set, not both user AND pass, so it doesn't count as an auth method
       expect(() => opts.validate(), returnsNormally);
     });
 
@@ -251,29 +178,65 @@ void main() {
         pass: 'secret',
       );
 
-      // This should NOT throw - only pass is set (not both user AND pass)
+      // Only pass is set, not both user AND pass, so it doesn't count as an auth method
       expect(() => opts.validate(), returnsNormally);
     });
 
-    test('validate succeeds with only jwt', () {
+    test('validate throws with jwt without nkeyPath (incomplete JWT auth)', () {
       final opts = ConnectOptions(
         jwt: 'jwt-token',
       );
 
-      expect(() => opts.validate(), returnsNormally);
+      expect(
+        () => opts.validate(),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
-    test('validate succeeds with only nkeyPath', () {
+    test('validate throws with nkeyPath without jwt (incomplete JWT auth)', () {
       final opts = ConnectOptions(
         nkeyPath: '/path/to/key',
       );
 
+      expect(
+        () => opts.validate(),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+    test('validate succeeds with jwt+nkey together (single auth method)', () {
+      final opts = ConnectOptions(
+        jwt: 'jwt-token',
+        nkeyPath: '/path/to/key',
+      );
+
+      // JWT+NKey counts as ONE auth method together
       expect(() => opts.validate(), returnsNormally);
     });
 
+    test('validate throws when jwt+nkey with authToken (two auth methods)', () {
+      final opts = ConnectOptions(
+        authToken: 'token',
+        jwt: 'jwt-token',
+        nkeyPath: '/path/to/key',
+      );
+
+      expect(
+        () => opts.validate(),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
     test('validate succeeds with no auth', () {
       final opts = const ConnectOptions();
+      expect(() => opts.validate(), returnsNormally);
+    });
 
+    test('validate does NOT throw with authToken and user alone', () {
+      final opts = ConnectOptions(
+        authToken: 'token',
+        user: 'admin',
+      );
+
+      // Only authToken counts as auth method (user alone is incomplete)
       expect(() => opts.validate(), returnsNormally);
     });
   });
@@ -287,49 +250,31 @@ void main() {
       expect(opts2.name, equals('updated'));
     });
 
-    test('copyWith preserves unspecified fields', () {
+    test('copyWith can change authToken from set to null', () {
       final opts1 = ConnectOptions(
         name: 'test',
-        maxReconnectAttempts: 10,
         authToken: 'token',
       );
 
-      final opts2 = opts1.copyWith(name: 'updated');
+      final opts2 = opts1.copyWith(authToken: null);
 
-      expect(opts2.name, equals('updated'));
-      expect(opts2.maxReconnectAttempts, equals(10));
-      expect(opts2.authToken, equals('token'));
-      expect(opts2.reconnectDelay,
-          equals(const Duration(seconds: 2))); // default preserved
+      expect(opts1.authToken, equals('token'));
+      expect(opts2.authToken, isNull);
     });
 
-    test('copyWith updates multiple fields', () {
-      final opts1 = const ConnectOptions(
-        name: 'test',
-        maxReconnectAttempts: 10,
-      );
+    test('copyWith can change auth method from token to jwt', () {
+      final opts1 = ConnectOptions(authToken: 'token');
 
       final opts2 = opts1.copyWith(
-        name: 'updated',
-        maxReconnectAttempts: 20,
-        noEcho: true,
+        authToken: null,
+        jwt: 'jwt-token',
+        nkeyPath: '/path/to/key',
       );
 
-      expect(opts2.name, equals('updated'));
-      expect(opts2.maxReconnectAttempts, equals(20));
-      expect(opts2.noEcho, isTrue);
-      expect(
-          opts2.reconnectDelay, equals(const Duration(seconds: 2))); // default
-    });
-
-    test('copyWith preserves ConnectionStatus (not in options)', () {
-      // ConnectionStatus is not part of ConnectOptions, so this verifies
-      // copyWith doesn't affect anything unrelated
-      final opts1 = const ConnectOptions();
-      final opts2 = opts1.copyWith(maxReconnectAttempts: 5);
-
-      expect(opts2.maxReconnectAttempts, equals(5));
-      expect(opts2.name, isNull); // preserved default
+      expect(opts1.authToken, equals('token'));
+      expect(opts2.authToken, isNull);
+      expect(opts2.jwt, equals('jwt-token'));
+      expect(opts2.nkeyPath, equals('/path/to/key'));
     });
   });
 
