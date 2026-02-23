@@ -1,0 +1,102 @@
+# gitignore for Dart packages
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be committed to version control, so this line
+# is commented out by default.
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Runner.xcarchive
+**/ios/Runner.xcworkspace
+**/ios/flutter/Flutter.podspec
+**/ios/flutter/Generated.xcconfig
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+coverage/
+pubspec.lock
+
+# Android
+android/.gradle
+android/.idea
+android/app/debug
+android/app/profile
+android/app/release
+android/local.properties
+
+# iOS
+ios/.symlinks/
+ios/.vagrant
+ios/**/Flutter/Flutter.framework
+ios/**/Flutter/Flutter.podspec
+ios/**/Flutter/GeneratedPluginRegistrant.*
+ios/**/Flutter/ephemeral/
+ios/**/GeneratedPluginRegistrant.*
+ios/Flutter/Flutter.podspec
+ios/Podfile.lock
+
+# macOS
+macos/Flutter/Flutter-Debug.xcconfig
+macos/Flutter/Flutter-Release.xcconfig
+macos/Flutter/GeneratedPluginRegistrant.*
+macos/Podfile.lock
+
+# Windows
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+
+# Linux
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugin_registrant.h
+linux/flutter/generated_plugins.cmake
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Web
+lib/generated_plugin_registrant.dart
+
+# Exceptions to above rules.
+/ios/**/GeneratedPluginRegistrant.h
+/ios/**/GeneratedPluginRegistrant.m
+/windows/flutter/generated_plugin_registrant.cc
+/windows/flutter/generated_plugin_registrant.h
+/windows/flutter/generated_plugins.cmake
+
+# Misc
+*.swp
+*.swo
+*~
+.env
+.env.local
