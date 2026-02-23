@@ -24,7 +24,9 @@ class Nuid {
 
   Nuid() {
     _randomizePrefix();
-    _seq = _random.nextInt(_maxSeq);
+    // Use modulo to stay within valid range for Random.nextInt
+    // Limit to 2^32-1 to avoid RangeError on web platforms
+    _seq = _random.nextInt(1000000000) % _maxSeq;
     _inc = _minInc + _random.nextInt(_maxInc - _minInc);
   }
 

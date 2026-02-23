@@ -9,8 +9,8 @@ import 'message.dart';
 /// Handles MSG, HMSG, INFO, PING, PONG, +OK, and -ERR commands.
 /// Multi-frame message assembly is handled internally via buffering.
 class NatsParser {
-  final _buffer = BytesBuilder(copy: false);
-  final _controller = StreamController<NatsMessage>.broadcast();
+  final _buffer = BytesBuilder();
+  final _controller = StreamController<NatsMessage>.broadcast(sync: true);
 
   Stream<NatsMessage> get messages => _controller.stream;
 
@@ -34,10 +34,10 @@ class NatsParser {
       try {
         switch (op) {
           case 'MSG':
-            _parseMsgOrHmsg(controlLine, bytes, false);
+            if (!_parseMsgOrHmsg(controlLine, bytes, false)) return;
             break;
           case 'HMSG':
-            _parseMsgOrHmsg(controlLine, bytes, true);
+            if (!_parseMsgOrHmsg(controlLine, bytes, true)) return;
             break;
           case 'INFO':
             _emitInfo(controlLine);
@@ -70,7 +70,8 @@ class NatsParser {
     }
   }
 
-  void _parseMsgOrHmsg(String line, Uint8List buf, bool hasHeaders) {
+  /// Returns true if a complete message was consumed, false if more bytes are needed.
+  bool _parseMsgOrHmsg(String line, Uint8List buf, bool hasHeaders) {
     final parts = line.split(' ')..removeWhere((e) => e.isEmpty);
 
     String subject;
@@ -120,7 +121,7 @@ class NatsParser {
 
     if (buf.length < requiredLen) {
       // Incomplete message — wait for more bytes
-      return;
+      return false;
     }
 
     Map<String, List<String>>? headers;
@@ -151,6 +152,7 @@ class NatsParser {
     ));
 
     _advance(requiredLen);
+    return true;
   }
 
   ({
@@ -218,10 +220,12 @@ class NatsParser {
     }
   }
 
-  void _advance(int bytes) {
+  void _advance(int count) {
     final current = _buffer.toBytes();
     _buffer.clear();
-    _buffer.add(current.sublist(bytes));
+    if (count < current.length) {
+      _buffer.add(current.sublist(count));
+    }
   }
 
   int _findCRLF(Uint8List bytes) {
