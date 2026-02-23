@@ -112,7 +112,4 @@ enum ConnectionStatus {
 
   /// Connection permanently closed.
   closed,
-
-  /// Connection error.
-  error,
 }

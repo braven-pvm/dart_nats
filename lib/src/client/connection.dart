@@ -128,10 +128,9 @@ class NatsConnection {
 
     // Send SUB command
     final cmd = NatsEncoder.sub(subject, sid, queueGroup: queueGroup);
-    _transport.write(cmd).catchError((e) {
-      _statusController.add(ConnectionStatus.error);
+    _transport.write(cmd).catchError((_) {
+      _statusController.add(ConnectionStatus.closed);
     });
-
     return sub;
   }
 
@@ -173,10 +172,9 @@ class NatsConnection {
       _transport.incoming.listen((data) {
         _parser.addBytes(data);
       }, onError: (error) {
-        _statusController.add(ConnectionStatus.error);
+        _statusController.add(ConnectionStatus.closed);
         _reconnect();
       });
-
       // Listen for parsed messages
       _parser.messages.listen(_handleMessage);
 
@@ -186,7 +184,7 @@ class NatsConnection {
       // Wait for INFO
       _statusController.add(ConnectionStatus.connected);
     } catch (e) {
-      _statusController.add(ConnectionStatus.error);
+      _statusController.add(ConnectionStatus.closed);
       rethrow;
     }
   }

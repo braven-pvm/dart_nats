@@ -34,7 +34,8 @@ void main() {
     test('encode HPUB with headers', () {
       final payload = Uint8List.fromList('Message'.codeUnits);
       final headers = {'Content-Type': 'text/plain', 'X-Request-Id': 'abc123'};
-      final result = NatsEncoder.hpub('test.subject', payload, headers: headers);
+      final result =
+          NatsEncoder.hpub('test.subject', payload, headers: headers);
 
       final resultStr = String.fromCharCodes(result);
       expect(resultStr, startsWith('HPUB test.subject '));
@@ -66,11 +67,13 @@ void main() {
       // +2 for final \r\nn = 12 header bytes
       final payload = Uint8List.fromList('X'.codeUnits); // 1 byte
       final headers = <String, String>{}; // No custom headers
-      final result = NatsEncoder.hpub('test.subject', payload, headers: headers);
+      final result =
+          NatsEncoder.hpub('test.subject', payload, headers: headers);
 
       final resultStr = String.fromCharCodes(result);
       // Extract header byte count from HPUB command
-      final match = RegExp(r'HPUB test\.subject (\d+) (\d+)').firstMatch(resultStr);
+      final match =
+          RegExp(r'HPUB test\.subject (\d+) (\d+)').firstMatch(resultStr);
       expect(match, isNotNull);
       final headerBytes = int.parse(match!.group(1)!);
       final totalBytes = int.parse(match.group(2)!);
@@ -82,11 +85,13 @@ void main() {
     test('encode HPUB with empty headers and payload', () {
       final payload = Uint8List(0);
       final headers = <String, String>{};
-      final result = NatsEncoder.hpub('test.subject', payload, headers: headers);
+      final result =
+          NatsEncoder.hpub('test.subject', payload, headers: headers);
 
       final resultStr = String.fromCharCodes(result);
       expect(resultStr, contains('NATS/1.0\r\n'));
-      expect(resultStr, contains('\r\n\r\n\r\n')); // end of headers and empty payload
+      expect(resultStr,
+          contains('\r\n\r\n\r\n')); // end of headers and empty payload
     });
   });
 

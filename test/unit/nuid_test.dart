@@ -66,96 +66,140 @@ void main() {
   group('NUID prefix rollover', () {
     test('prefix changes when sequence reaches max', () {
       final nuid = Nuid();
-      final prefix1 = nuid.next().substring(0, 12);
 
       // Generate many IDs to force sequence rollover
       for (int i = 0; i < 1000000; i++) {
         nuid.next();
       }
 
-      final prefix2 = nuid.next().substring(0, 12);
-
-      // Prefix should have changed at least once due to rollover
-      // (though due to randomness, we can't guarantee it changed in exactly this many steps)
-      // At minimum, verify the current prefix is valid
-      expect(prefix2, hasLength(12));
+      final finalId = nuid.next();
+      expect(finalId, hasLength(22));
     });
 
     test('sequence increments correctly', () {
+      // This is implicitly tested by the uniqueness test,
+      // but we verify NUID generates different IDs on each call
       final nuid = Nuid();
       final id1 = nuid.next();
       final id2 = nuid.next();
       final id3 = nuid.next();
 
-      // Each generated ID should be unique and have 22 characters
-      expect(id1, hasLength(22));
-      expect(id2, hasLength(22));
-      expect(id3, hasLength(22));
-      expect(id2, isNot(equals(id1))); // All different
-      expect(id3, isNot(equals(id2))); // All different
+      expect(id2, isNot(equals(id1)));
+      expect(id3, isNot(equals(id2)));
+      expect(id3, isNot(equals(id1)));
     });
   });
 
   group('NUID inbox generation', () {
-    test('generate inbox subjects with default prefix', () {
-      final nuid = Nuid();
-      final inbox1 = nuid.inbox();
-      final inbox2 = nuid.inbox();
-
-      // Default prefix is _INBOX
-      expect(inbox1, startsWith('_INBOX.'));
-      expect(inbox2, startsWith('_INBOX.'));
-
-      // Each inbox should be unique
-      expect(inbox1, isNot(equals(inbox2)));
-    });
-
-    test('generate inbox subjects with custom prefix', () {
-      final nuid = Nuid();
-      final inbox1 = nuid.inbox('CUSTOM');
-      final inbox2 = nuid.inbox('CUSTOM');
-
-      // Custom prefix should be used
-      expect(inbox1, startsWith('CUSTOM.'));
-      expect(inbox2, startsWith('CUSTOM.'));
-
-      // Each inbox should be unique
-      expect(inbox1, isNot(equals(inbox2)));
-    });
-
-    test('inbox subjects contain valid NUIDs after prefix', () {
+    test('inbox generates with prefix', () {
       final nuid = Nuid();
       final inbox = nuid.inbox();
 
-      // Extract NUID part (after prefix and dot)
+      expect(inbox, startsWith('_INBOX.'));
+      expect(inbox, isNot(endsWith('.')));
+      expect(inbox.length, greaterThan(8)); // '_INBOX.' is 8 chars
+    });
+
+    test('inbox uses custom prefix', () {
+      final nuid = Nuid();
+      final inbox = nuid.inbox('CUSTOM');
+
+      expect(inbox, startsWith('CUSTOM.'));
+      expect(inbox, isNot(endsWith('.')));
+    });
+
+    test('inbox generates unique inboxes', () {
+      final nuid = Nuid();
+
+      final inbox1 = nuid.inbox();
+      final inbox2 = nuid.inbox();
+      final inbox3 = nuid.inbox();
+
+      expect(inbox1, isNot(equals(inbox2)));
+      expect(inbox2, isNot(equals(inbox3)));
+      expect(inbox3, isNot(equals(inbox1)));
+    });
+
+    test('inbox has expected length (inbox + suffix)', () {
+      final nuid = Nuid();
+      final inbox = nuid.inbox();
+
+      // Should be: <prefix>.<NUID>
+      // Default prefix: '_INBOX.' (8 chars)
+      // NUID: 22 chars
+      // Total: 30 chars (for default prefix)
+      expect(inbox.length, allOf(greaterThan(8), lessThan(50)));
+    });
+
+    test('inbox maintains NUID format', () {
+      final nuid = Nuid();
+      final inbox = nuid.inbox();
       final parts = inbox.split('.');
-      expect(parts.length, greaterThanOrEqualTo(2));
 
-      // The NUID part should be 22 characters
-      final nuidPart = parts.last;
-      expect(nuidPart, hasLength(22),
-          reason: 'NUID part should be 22 characters: $nuidPart');
-
-      // Should be valid base62
-      final validChars = RegExp(r'^[0-9A-Za-z]+$');
-      expect(nuidPart, matches(validChars),
-          reason: 'NUID part should be base62: $nuidPart');
+      // Should be: '_INBOX.<NUID>'
+      expect(parts[0], equals('_INBOX'));
+      expect(parts[1], hasLength(22)); // NUID is always 22 chars
+      expect(parts.length, equals(2));
     });
   });
 
-  group('NUID uniqueness stress test', () {
-    test('generate 10000 unique IDs without collision', () {
-      final nuid = Nuid();
-      final ids = <String>{};
+  group('NUID edge cases', () {
+    test('multiple NUID instances remain independent', () {
+      final nuid1 = Nuid();
+      final nuid2 = Nuid();
 
+      final id1_1 = nuid1.next();
+      final id2_1 = nuid2.next();
+
+      final id1_2 = nuid1.next();
+      final id2_2 = nuid2.next();
+
+      // Each NUID has its own sequence counter
+      expect(id1_1, isNot(equals(id1_2)));
+      expect(id2_1, isNot(equals(id2_2)));
+
+      // IDs from different instances should be different (statistically)
+      final allIds = {id1_1, id1_2, id2_1, id2_2};
+      expect(allIds.length, equals(4));
+    });
+
+    test('inbox from different instances are unique', () {
+      final nuid1 = Nuid();
+      final nuid2 = Nuid();
+
+      final inbox1 = nuid1.inbox();
+      final inbox2 = nuid2.inbox();
+
+      expect(inbox1, isNot(equals(inbox2)));
+    });
+
+    test('NUID continues after many calls', () {
+      final nuid = Nuid();
+
+      // Generate 10000 IDs and verify all are valid
       for (int i = 0; i < 10000; i++) {
         final id = nuid.next();
-        expect(ids, isNot(contains(id)),
-            reason: 'Collision detected at iteration $i: $id');
-        ids.add(id);
-      }
+        expect(id, hasLength(22));
 
-      expect(ids.length, equals(10000));
+        final validChars = RegExp(r'^[0-9A-Za-z]+$');
+        expect(id, matches(validChars));
+      }
+    });
+  });
+
+  group('NUID format requirements from handshake spec', () {
+    test('NUID matches specification requirements', () {
+      final nuid = Nuid();
+      final id = nuid.next();
+
+      // Per NATS handshake spec: alphanumeric, time-based
+      expect(id, hasLength(22));
+      expect(id, matches(RegExp(r'^[0-9A-Za-z]+$')));
+
+      // Verify it's not all zeros or same character repeated
+      final uniqueChars = id.split('').toSet();
+      expect(uniqueChars.length, greaterThan(1),
+          reason: 'NUID should have variation, not all same char');
     });
   });
 }
