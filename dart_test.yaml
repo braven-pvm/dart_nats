@@ -15,6 +15,14 @@ tags:
     # These tests run in <5 seconds and use no runtime execution.
     use_stubs: false
 
+  unit:
+    # Unit tests: isolated tests with no external dependencies.
+    use_stubs: false
+
+  integration:
+    # Integration tests: require a running NATS server (Docker).
+    use_stubs: false
+
   e2e:
     # End-to-end tests: may be slow, excluded from local dev runs.
     use_stubs: false

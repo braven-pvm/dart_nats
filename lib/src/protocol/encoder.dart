@@ -3,8 +3,6 @@ import 'dart:typed_data';
 
 /// Encodes NATS wire protocol commands.
 class NatsEncoder {
-  static const _crlf = '\r\n';
-
   /// Encode CONNECT command.
   static Uint8List connect({
     required String version,
@@ -142,11 +140,11 @@ class NatsEncoder {
 
   static Uint8List _buildPayloadCommand(String line, Uint8List payload) {
     // <line>\r\n<payload>\r\n
-    final result = BytesBuilder(copy: false);
-    result.addAll(line.codeUnits);
-    result.addAll([13, 10]); // \r\n
-    result.addAll(payload);
-    result.addAll([13, 10]); // \r\n
+    final result = BytesBuilder(copy: false)
+      ..add(line.codeUnits)
+      ..add([13, 10]) // \r\n
+      ..add(payload)
+      ..add([13, 10]); // \r\n
     return result.toBytes();
   }
 
@@ -157,12 +155,12 @@ class NatsEncoder {
   ) {
     // <line>\r\n<headerSection>\r\n<payload>\r\n
     final result = BytesBuilder(copy: false);
-    result.addAll(line.codeUnits);
-    result.addAll([13, 10]); // \r\n
-    result.addAll(headerSection);
-    result.addAll([13, 10]); // \r\n (end of headers)
-    result.addAll(payload);
-    result.addAll([13, 10]); // \r\n (end of message)
+    result.add(line.codeUnits);
+    result.add([13, 10]); // \r\n
+    result.add(headerSection);
+    result.add([13, 10]); // \r\n (end of headers)
+    result.add(payload);
+    result.add([13, 10]); // \r\n (end of message)
     return result.toBytes();
   }
 }

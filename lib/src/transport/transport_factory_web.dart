@@ -3,8 +3,13 @@
 import 'transport.dart';
 import 'websocket_transport.dart';
 
+/// Re-exports platform-specific transport implementations for web platforms.
+/// (Definitions are in transport_factory.dart)
+export 'websocket_transport.dart';
+export 'transport.dart';
+
 /// Create transport for web platforms (Flutter Web, browser).
-/// Coerces nats:// and nats+tls:// to WebSocket URIs (ws://  or wss://).
+/// Coerces nats:// and nats+tls:// to WebSocket URIs (ws:// or wss://).
 Transport createTransport(Uri uri) {
   // Coerce scheme to WebSocket for browser
   final wsUri = uri.replace(

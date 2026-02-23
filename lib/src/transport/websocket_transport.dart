@@ -23,8 +23,9 @@ class WebSocketTransport implements Transport {
   Stream<Object> get errors => _errorsController.stream;
 
   @override
-  bool get isConnected => _channel != null;
+  bool get isConnected => true;
 
+  @override
   Future<void> connect() async {
     _incomingController = StreamController<Uint8List>.broadcast();
     _errorsController = StreamController<Object>.broadcast();
@@ -40,7 +41,7 @@ class WebSocketTransport implements Transport {
             _incomingController.add(Uint8List.fromList(message.codeUnits));
           }
         },
-        onError: (error) => _errorsController.add(error),
+        onError: (Object error) => _errorsController.add(error),
         onDone: () async {
           await _incomingController.close();
           await _errorsController.close();

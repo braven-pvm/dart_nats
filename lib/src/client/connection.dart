@@ -29,7 +29,6 @@ class NatsConnection {
       StreamController<ConnectionStatus>.broadcast();
   final Map<String, Subscription> _subscriptions = {};
 
-  String? _serverId;
   bool _headerSupport = false;
   bool _jetStreamAvailable = false;
 
@@ -100,13 +99,7 @@ class NatsConnection {
     try {
       await publish(subject, data, replyTo: replyTo);
 
-      final msg = await sub.messages
-          .timeout(timeout,
-              onTimeout: () => throw TimeoutException(
-                    'No reply received',
-                    timeout,
-                  ))
-          .first;
+      final msg = await sub.messages.timeout(timeout).first;
 
       return msg;
     } finally {
@@ -151,7 +144,7 @@ class NatsConnection {
 
   /// Drain: wait for all pending requests to complete, then close.
   Future<void> drain() async {
-    _statusController.add(ConnectionStatus.closing);
+    _statusController.add(ConnectionStatus.closed);
     // TODO: implement drain
     await close();
   }
@@ -171,16 +164,7 @@ class NatsConnection {
     try {
       // Create transport
       _transport = transport_factory.createTransport(_uri);
-      if (_transport is! Transport) {
-        throw StateError('Failed to create transport');
-      }
-
-      // For TCP/WebSocket, we need to establish connection
-      if (_transport.runtimeType.toString().contains('TcpTransport') ||
-          _transport.runtimeType.toString().contains('WebSocketTransport')) {
-        // Access private connect method via reflection or direct call
-        // This is a temporary solution; normally you'd use the public interface
-      }
+      await _transport.connect();
 
       // Create parser
       _parser = NatsParser();
@@ -247,7 +231,6 @@ class NatsConnection {
 
     try {
       final infoJson = jsonDecode(utf8.decode(msg.payload!));
-      _serverId = infoJson['server_id'];
       _headerSupport = infoJson['headers'] == true;
       _jetStreamAvailable = infoJson['jetstream'] == true;
 
@@ -271,7 +254,7 @@ class NatsConnection {
     while (_options.maxReconnectAttempts == -1 ||
         attempts < _options.maxReconnectAttempts) {
       _statusController.add(ConnectionStatus.reconnecting);
-      await Future.delayed(_options.reconnectDelay);
+      await Future<void>.delayed(_options.reconnectDelay);
 
       try {
         // TODO: Implement reconnection with subscription replay
@@ -285,6 +268,3 @@ class NatsConnection {
     _statusController.add(ConnectionStatus.closed);
   }
 }
-
-// Mark enums that don't exist yet
-enum _Placeholder { placeholder }

@@ -18,6 +18,9 @@ abstract class Transport {
   /// Whether the transport is currently connected.
   bool get isConnected;
 
+  /// Establish the connection.
+  Future<void> connect();
+
   /// Stream of errors/disconnection events.
   Stream<Object> get errors;
 }

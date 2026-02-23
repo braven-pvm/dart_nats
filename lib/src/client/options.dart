@@ -1,7 +1,20 @@
-import 'dart:async';
-
 /// Connection options for NATS.
 class ConnectOptions {
+  const ConnectOptions({
+    this.name,
+    this.maxReconnectAttempts = -1,
+    this.reconnectDelay = const Duration(seconds: 2),
+    this.pingInterval = const Duration(minutes: 2),
+    this.maxPingOut = 2,
+    this.noEcho = false,
+    this.inboxPrefix = '_INBOX',
+    this.authToken,
+    this.user,
+    this.pass,
+    this.jwt,
+    this.nkeyPath,
+  });
+
   /// Display name for this client (visible in monitoring).
   final String? name;
 
@@ -37,21 +50,6 @@ class ConnectOptions {
 
   /// Path to NKey seed file for challenge/response authentication.
   final String? nkeyPath;
-
-  const ConnectOptions({
-    this.name,
-    this.maxReconnectAttempts = -1,
-    this.reconnectDelay = const Duration(seconds: 2),
-    this.pingInterval = const Duration(minutes: 2),
-    this.maxPingOut = 2,
-    this.noEcho = false,
-    this.inboxPrefix = '_INBOX',
-    this.authToken,
-    this.user,
-    this.pass,
-    this.jwt,
-    this.nkeyPath,
-  });
 
   /// Validate that auth credentials are properly set.
   ///

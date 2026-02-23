@@ -1,9 +1,12 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:io';
-
 import 'tcp_transport.dart';
 import 'transport.dart';
 import 'websocket_transport.dart';
+
+/// Re-exports platform-specific transport implementations for native platforms.
+/// (Definitions are in transport_factory.dart)
+export 'tcp_transport.dart';
+export 'websocket_transport.dart';
+export 'transport.dart';
 
 /// Create transport for native platforms (iOS, Android, macOS, Windows, Linux, Dart server).
 /// Prefers TCP for nats:// URIs, uses WebSocket for ws:// and wss:// URIs.

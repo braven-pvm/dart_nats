@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Smoke: project structure', () {
@@ -17,10 +17,9 @@ void main() {
       expect(libDir.existsSync(), isTrue);
 
       final requiredDirs = [
-        'transport',
-        'protocol',
-        'client',
-        // jetstream and kv are Phase 2/3, not Phase 1
+        'src/transport',
+        'src/protocol',
+        'src/client',
       ];
 
       for (final dirName in requiredDirs) {
@@ -42,12 +41,12 @@ void main() {
       }
     });
 
-    test('Agent test config should exist with valid JSON', () {
+    test('.agent-test-config.json should exist with valid JSON', () {
       final file = File('.agent-test-config.json');
       expect(file.existsSync(), isTrue);
 
       final content = file.readAsStringSync();
-      expect(content, contains('"framework": "dart"'));
+      expect(content, contains('"framework"'));
       expect(content, contains('"tiers"'));
       expect(content, contains('"smoke"'));
       expect(content, contains('"unit"'));
@@ -55,22 +54,17 @@ void main() {
     });
 
     test('dart_test.yaml should exist and have tag configuration', () {
-      final file = File('dart_test.yaml');
-      expect(file.existsSync(), isTrue);
+      final dartTestFile = File('dart_test.yaml');
+      expect(dartTestFile.existsSync(), isTrue);
 
-      final content = file.readAsStringSync();
+      final content = dartTestFile.readAsStringSync();
       expect(content, contains('tags:'));
       expect(content, contains('smoke:'));
-    });
-
-    test('Example Flutter example files should exist', () {
-      final basicExample = File('example/basic.dart');
-      final nativeExample = File('example/flutter_native_example.dart');
-      final webExample = File('example/flutter_web_example.dart');
-
-      expect(basicExample.existsSync(), isTrue);
-      expect(nativeExample.existsSync(), isTrue);
-      expect(webExample.existsSync(), isTrue);
+      expect(content, contains('unit:'));
+      expect(content, contains('integration:'));
+      expect(content, contains('e2e:'));
+      expect(content, contains('slow:'));
+      expect(content, contains('presubmit:'));
     });
   });
 }

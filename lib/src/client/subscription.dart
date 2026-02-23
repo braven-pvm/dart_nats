@@ -1,4 +1,4 @@
-import 'package:nats_dart/src/protocol/message.dart';
+import '../protocol/message.dart';
 
 /// Represents an active subscription to a subject.
 class Subscription {

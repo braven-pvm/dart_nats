@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 /// JetStream context for a NATS connection.
 ///
 /// Provides access to stream management, consumer management, and publish/subscribe
