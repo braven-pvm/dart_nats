@@ -54,22 +54,47 @@ class NatsEncoder {
   /// Encode HPUB (Publish with headers).
   ///
   /// Headers map is automatically formatted with NATS/1.0 header and closing blank line.
+  /// Supports multi-value headers via Map<String, List<String>>.
+  /// All header values are properly UTF-8 encoded for multi-byte characters.
   static Uint8List hpub(
     String subject,
     Uint8List payload, {
     String? replyTo,
-    Map<String, String>? headers,
+    Map<String, dynamic>? headers,
   }) {
-    // Build header section
-    final headerLines = <String>['NATS/1.0'];
+    // Build header section with NATS/1.0 header block format
+    //
+    // Format (byte-perfect):
+    // NATS/1.0\r\n
+    // [Key: Value\r\n]...
+    // \r\n  <-- blank line ends headers
+    //
+    // hdrBytes = entire header section length INCLUDING final \r\n\r\n
+    // totalBytes = hdrBytes + payload.length
+
+    final headerSegment = BytesBuilder(copy: false);
+
+    // Start with NATS/1.0\r\n
+    headerSegment.add(utf8.encode('NATS/1.0\r\n'));
+
+    // Add headers (supports Map<String, String> or Map<String, List<String>>)
+    // Use utf8.encode() to properly handle multi-byte Unicode characters
     if (headers != null && headers.isNotEmpty) {
       headers.forEach((key, value) {
-        headerLines.add('$key: $value');
+        if (value is String) {
+          headerSegment.add(utf8.encode('$key: $value\r\n'));
+        } else if (value is List<String>) {
+          for (final val in value) {
+            headerSegment.add(utf8.encode('$key: $val\r\n'));
+          }
+        }
       });
     }
-    headerLines.add(''); // Blank line to end headers
-    final headerSection = headerLines.join('\r\n').codeUnits;
-    final hdrBytes = headerSection.length + 2; // +2 for final \r\n
+
+    // End header section with blank line (\r\n)
+    headerSegment.add(utf8.encode('\r\n'));
+    final headerSection = headerSegment.toBytes();
+    final hdrBytes = headerSection.length; // Already includes final \r\n\r\n
 
     final totalBytes = hdrBytes + payload.length;
     final line = _buildPubLine('HPUB', subject, replyTo, hdrBytes, totalBytes);
@@ -113,7 +138,8 @@ class NatsEncoder {
     } else {
       line = '$op $args';
     }
-    return Uint8List.fromList(line.codeUnits + [13, 10]); // \r\n
+    // Use utf8.encode() to handle potential Unicode in subjects or args
+    return Uint8List.fromList(utf8.encode(line) + [13, 10]); // \r\n
   }
 
   static String _buildPubLine(
@@ -141,7 +167,7 @@ class NatsEncoder {
   static Uint8List _buildPayloadCommand(String line, Uint8List payload) {
     // <line>\r\n<payload>\r\n
     final result = BytesBuilder(copy: false)
-      ..add(line.codeUnits)
+      ..add(utf8.encode(line)) // Handle Unicode in command lines
       ..add([13, 10]) // \r\n
       ..add(payload)
       ..add([13, 10]); // \r\n
@@ -153,14 +179,14 @@ class NatsEncoder {
     List<int> headerSection,
     Uint8List payload,
   ) {
-    // <line>\r\n<headerSection>\r\n<payload>\r\n
+    // HPUB format: <line>\r\n<headerSection><payload>\r\n
+    // where headerSection already ends with \r\n\r\n
     final result = BytesBuilder(copy: false);
-    result.add(line.codeUnits);
-    result.add([13, 10]); // \r\n
+    result.add(utf8.encode(line)); // Handle Unicode in command lines
+    result.add([13, 10]); // \r\n after command line
     result.add(headerSection);
-    result.add([13, 10]); // \r\n (end of headers)
     result.add(payload);
-    result.add([13, 10]); // \r\n (end of message)
+    result.add([13, 10]); // \r\n after payload
     return result.toBytes();
   }
 }
