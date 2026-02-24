@@ -51,10 +51,6 @@ class NatsMessage {
   /// Whether this is a timeout response (408).
   bool get isTimeout => statusCode == 408;
 
-  /// Whether consumer was deleted (409 Consumer Deleted).
-  bool get isConsumerDeleted =>
-      statusCode == 409 && (statusDesc?.contains('Consumer Deleted') ?? false);
-
   /// Get first value of a header by name (case-insensitive).
   String? header(String name) {
     if (headers == null) return null;

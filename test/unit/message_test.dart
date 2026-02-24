@@ -143,22 +143,14 @@ void main() {
       expect(msg.isTimeout, isFalse);
     });
 
-    test(
-        'isConsumerDeleted true when statusCode=409 and desc contains "Consumer Deleted"',
-        () {
+    test('409 Consumer Deleted - parsing only, no helper', () {
       final msg = NatsMessage(
         statusCode: 409,
         statusDesc: 'Consumer Deleted',
       );
-      expect(msg.isConsumerDeleted, isTrue);
-    });
-
-    test('isConsumerDeleted false when statusCode != 409', () {
-      final msg = NatsMessage(
-        statusCode: 200,
-        statusDesc: 'Consumer Deleted',
-      );
-      expect(msg.isConsumerDeleted, isFalse);
+      expect(msg.statusCode, equals(409));
+      expect(msg.statusDesc, equals('Consumer Deleted'));
+      // No isConsumerDeleted helper exists per spec
     });
   });
 

@@ -111,7 +111,7 @@ You have powerful built-in tools for navigating and editing code. **Always prefe
 | `insert_at_line`   | Insert text at a line number      | Add new code at a specific location.                                  |
 | `delete_section`   | Delete a range of lines           | Remove code blocks by line range.                                     |
 | `bulk_replace`     | Many replacements across files    | Large-scale refactoring across multiple files.                        |
-| `create_file`      | Create a new file                 | New files only — use edit tools for existing files.                   |
+| `create_file`      | Create a new file                 | Use `force=true` to overwrite existing files.                         |
 | `create_directory` | Create a directory                | Create new directories as needed.                                     |
 | `delete_file`      | Delete a file                     | Remove files that are no longer needed.                               |
 | `validate_edit`    | Dry-run an edit                   | Preview what an edit would do before applying.                        |

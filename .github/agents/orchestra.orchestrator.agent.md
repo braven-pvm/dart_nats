@@ -63,7 +63,7 @@ You have powerful built-in tools for navigating and reading code. **Always prefe
 | `smart_replace`  | Find-and-replace with context     | **Primary edit tool.** Precise replacements with surrounding context. |
 | `smart_replaces` | Multiple replacements in one call | Batch independent edits for efficiency.                               |
 | `edit_file`      | Replace exact string in file      | Simple single replacement when you know the exact text.               |
-| `create_file`    | Create a new file                 | New files only — use edit tools for existing files.                   |
+| `create_file`    | Create a new file                 | Use `force=true` to overwrite existing files.                         |
 
 ### System & Execution
 
