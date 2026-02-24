@@ -452,7 +452,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 37 38\r\n'
+          'HMSG subj sid 21 22\r\n'
                   'NATS/1.0 100 Flow\r\n'
                   '\r\n'
                   'X\r\n'
@@ -474,7 +474,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 35 36\r\n'
+          'HMSG subj sid 21 22\r\n'
                   'NATS/1.0 100 Idle\r\n'
                   '\r\n'
                   'X\r\n'
@@ -496,7 +496,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 30 31\r\n'
+          'HMSG subj sid 28 29\r\n'
                   'NATS/1.0 404 No Messages\r\n'
                   '\r\n'
                   'X\r\n'
@@ -517,7 +517,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 28 29\r\n'
+          'HMSG subj sid 24 25\r\n'
                   'NATS/1.0 408 Timeout\r\n'
                   '\r\n'
                   'X\r\n'
@@ -538,7 +538,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 41 42\r\n'
+          'HMSG subj sid 33 34\r\n'
                   'NATS/1.0 409 Consumer Deleted\r\n'
                   '\r\n'
                   'X\r\n'
@@ -561,7 +561,7 @@ void main() {
 
       parser.addBytes(
         Uint8List.fromList(
-          'HMSG subj sid 80 81\r\n'
+          'HMSG subj sid 63 64\r\n'
                   'NATS/1.0\r\n'
                   'X-Multi: value1\r\n'
                   'X-Multi: value2\r\n'
