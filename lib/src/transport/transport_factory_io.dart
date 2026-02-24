@@ -15,5 +15,5 @@ Transport createTransport(Uri uri) {
     return WebSocketTransport(uri);
   }
   // Default to TCP for nats://, nats+tls://, or any other scheme
-  return TcpTransport(uri.host, uri.port);
+  return TcpTransport(host: uri.host, port: uri.port);
 }

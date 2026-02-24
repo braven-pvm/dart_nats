@@ -23,7 +23,11 @@ import 'dart:typed_data';
 /// **Usage:**
 ///
 /// ```dart
-/// final transport = TcpTransport('localhost', 4222);
+/// // Via factory (recommended - handles platform differences):
+/// final transport = createTransport(Uri.parse('nats://localhost:4222'));
+///
+/// // Or directly with named parameters:
+/// final transport = TcpTransport(host: 'localhost', port: 4222);
 /// await transport.connect();
 ///
 /// transport.incoming.listen((data) {

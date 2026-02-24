@@ -17,13 +17,12 @@ import 'package:nats_dart/src/transport/tcp_transport.dart';
 void main() {
   group('TcpTransport - Connection Lifecycle', () {
     test('isConnected is false before connect()', () {
-      final transport = TcpTransport('localhost', 4222);
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       expect(transport.isConnected, isFalse);
     });
 
     test('isConnected is true after successful connect()', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
         expect(transport.isConnected, isTrue);
@@ -35,8 +34,7 @@ void main() {
     });
 
     test('isConnected is false after close()', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
         await transport.close();
@@ -48,8 +46,7 @@ void main() {
 
     test('close() is idempotent - calling multiple times has no side effects',
         () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
         await transport.close();
@@ -67,18 +64,35 @@ void main() {
     });
 
     test('close() can be called before connect()', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       // Should not throw
       await transport.close();
       expect(transport.isConnected, isFalse);
     });
-  });
 
+    test('multiple connect() calls throw SocketException', () async {
+      final transport = TcpTransport(host: 'localhost', port: 4222);
+
+      try {
+        await transport.connect();
+        expect(transport.isConnected, isTrue);
+
+        // Second connect should throw SocketException
+        expect(
+          () => transport.connect(),
+          throwsA(isA<SocketException>()),
+        );
+      } on SocketException {
+        markTestSkipped('NATS server not running on localhost:4222');
+      } finally {
+        await transport.close();
+      }
+    });
+  });
   group('TcpTransport - Send/Receive', () {
     test('incoming stream emits Uint8List chunks received from server',
         () async {
-      final transport = TcpTransport('localhost', 4222);
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       final completer = Completer<Uint8List>();
 
       try {
@@ -118,8 +132,7 @@ void main() {
     }, timeout: const Timeout(Duration(seconds: 10)));
 
     test('write(Uint8List data) sends bytes to server', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
 
@@ -137,7 +150,7 @@ void main() {
     });
 
     test('PING command receives PONG response', () async {
-      final transport = TcpTransport('localhost', 4222);
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       final responses = <Uint8List>[];
 
       try {
@@ -169,8 +182,7 @@ void main() {
     }, timeout: const Timeout(Duration(seconds: 10)));
 
     test('write() throws StateError if not connected', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       expect(
         () => transport.write(Uint8List.fromList('PING\r\n'.codeUnits)),
         throwsA(isA<StateError>()),
@@ -178,8 +190,7 @@ void main() {
     });
 
     test('write() throws StateError after close()', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
         await transport.close();
@@ -196,7 +207,7 @@ void main() {
 
   group('TcpTransport - Errors', () {
     test('errors stream emits network errors', () async {
-      final transport = TcpTransport('localhost', 4222);
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       final errors = <Object>[];
 
       try {
@@ -220,7 +231,7 @@ void main() {
 
     test('connection failure emits error on errors stream', () async {
       // Try to connect to invalid port
-      final transport = TcpTransport('localhost', 59999);
+      final transport = TcpTransport(host: 'localhost', port: 59999);
       final errors = <Object>[];
 
       transport.errors.listen((error) => errors.add(error));
@@ -235,8 +246,7 @@ void main() {
     });
 
     test('errors stream is closed after close()', () async {
-      final transport = TcpTransport('localhost', 4222);
-
+      final transport = TcpTransport(host: 'localhost', port: 4222);
       try {
         await transport.connect();
 
@@ -263,8 +273,8 @@ void main() {
   group('TcpTransport - TLS', () {
     test('connect with TLS enabled', () async {
       // Most NATS servers don't have TLS on by default, so skip if not available
-      final transport = TcpTransport('localhost', 4223, useTls: true);
-
+      final transport =
+          TcpTransport(host: 'localhost', port: 4223, useTls: true);
       try {
         await transport.connect();
         expect(transport.isConnected, isTrue);

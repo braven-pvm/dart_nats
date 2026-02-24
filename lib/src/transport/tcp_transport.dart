@@ -18,9 +18,8 @@ import 'transport.dart';
 /// **Usage:**
 ///
 /// ```dart
-/// final transport = TcpTransport('localhost', 4222);
-/// await transport.connect();
-///
+/// final transport = TcpTransport(host: 'localhost', port: 4222);
+/// await transport.connect();///
 /// transport.incoming.listen((data) {
 ///   // Handle incoming bytes
 /// });
@@ -35,6 +34,7 @@ import 'transport.dart';
 class TcpTransport implements Transport {
   final String host;
   final int port;
+  final Duration connectTimeout;
   final bool _useTls;
 
   Socket? _socket;
@@ -44,8 +44,12 @@ class TcpTransport implements Transport {
   bool _isConnected = false;
   bool _isClosing = false;
 
-  TcpTransport(this.host, this.port, {bool useTls = false}) : _useTls = useTls;
-
+  TcpTransport({
+    required this.host,
+    required this.port,
+    this.connectTimeout = const Duration(seconds: 10),
+    bool useTls = false,
+  }) : _useTls = useTls;
   @override
   Stream<Uint8List> get incoming {
     _incomingController ??= StreamController<Uint8List>.broadcast();
@@ -64,19 +68,18 @@ class TcpTransport implements Transport {
   @override
   Future<void> connect() async {
     if (_isConnected) {
-      return; // Already connected
+      throw SocketException('Connection already exists');
     }
-
     _incomingController = StreamController<Uint8List>.broadcast();
     _errorsController = StreamController<Object>.broadcast();
 
     try {
       if (_useTls) {
-        _socket = await SecureSocket.connect(host, port);
+        _socket =
+            await SecureSocket.connect(host, port, timeout: connectTimeout);
       } else {
-        _socket = await Socket.connect(host, port);
+        _socket = await Socket.connect(host, port, timeout: connectTimeout);
       }
-
       _socketSubscription = _socket!.listen(
         (data) {
           if (_incomingController?.isClosed == false) {

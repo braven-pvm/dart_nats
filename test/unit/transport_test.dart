@@ -419,6 +419,9 @@ void main() {
       test('write then pumpData simulates request-response', () async {
         await transport.connect();
 
+        // Start listening BEFORE pumping data (broadcast stream doesn't buffer)
+        final responseFuture = transport.incoming.first;
+
         // Client sends PING
         await transport.write(Uint8List.fromList('PING\r\n'.codeUnits));
 
@@ -426,11 +429,10 @@ void main() {
         final pongResponse = 'PONG\r\n';
         transport.pumpData(Uint8List.fromList(pongResponse.codeUnits));
 
-        final response = await transport.incoming.first;
+        final response = await responseFuture;
         expect(String.fromCharCodes(response), equals(pongResponse));
         expect(transport.writtenBytes, hasLength(1));
       });
-
       test('pumpError simulates connection failure', () async {
         Object? receivedError;
         transport.errors.listen((error) {

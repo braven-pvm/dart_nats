@@ -405,16 +405,7 @@ prepare_task({
 
 ---
 
-## Environment Context
-
-- **Operating System**: {{osName}} ({{platform}})
-- **Shell**: {{shell}}
-- **Path Separator**: {{pathSeparator}}
-- **Workspace Root**: {{workspaceRoot}}
-
-{{#if_eq platform "win32"}}
-**Windows-specific:** Prefer cross-platform tools (`read_file`, `grep_search`, `list_directory`) over shell commands (`type`, `findstr`, `dir`).
-{{/if_eq}}
+{{> environment-context}}
 
 ---
 
