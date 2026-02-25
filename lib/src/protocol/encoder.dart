@@ -26,6 +26,11 @@ class NatsEncoder {
       'headers': headers,
       'lang': lang,
       'version': version,
+      // noEcho maps to 'no_echo' in the NATS protocol JSON.
+      // When noEcho=true, the server will not echo back messages published
+      // by this client on subjects this client also subscribes to.
+      // noEcho=false (default) means the server WILL echo, so we omit the
+      // field entirely to keep the CONNECT payload minimal.
       if (noEcho) 'no_echo': noEcho,
       if (noResponders) 'no_responders': noResponders,
       if (name != null) 'name': name,

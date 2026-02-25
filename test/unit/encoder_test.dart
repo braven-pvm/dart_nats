@@ -441,8 +441,44 @@ void main() {
       expect(resultStr, contains('\"nkey\":\"ABCDEF...\"'));
       expect(resultStr, contains('\"sig\":\"signature...\"'));
     });
-  });
 
+    test('encode CONNECT with name parameter', () {
+      final result = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        name: 'my-client',
+      );
+      final resultStr = String.fromCharCodes(result);
+      expect(resultStr, contains('\"name\":\"my-client\"'),
+          reason: 'CONNECT should include client name when provided');
+    });
+
+    test('encode CONNECT with noEcho=true sends no_echo field', () {
+      final result = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        noEcho: true,
+      );
+      final resultStr = String.fromCharCodes(result);
+      // noEcho=true maps to 'no_echo':true in the NATS wire protocol.
+      // When no_echo is true the server suppresses echo of own-published messages.
+      expect(resultStr, contains('\"no_echo\":true'),
+          reason: 'noEcho=true should emit no_echo:true in CONNECT JSON');
+    });
+
+    test('encode CONNECT with noEcho=false omits no_echo field', () {
+      final result = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        noEcho: false,
+      );
+      final resultStr = String.fromCharCodes(result);
+      // noEcho=false (default) — field is omitted to keep CONNECT minimal.
+      expect(resultStr, isNot(contains('no_echo')),
+          reason:
+              'noEcho=false (default) should not include no_echo in CONNECT JSON');
+    });
+  });
   group('UNSUB encoding', () {
     test('encode UNSUB without max messages', () {
       final result = NatsEncoder.unsub('sid1');
