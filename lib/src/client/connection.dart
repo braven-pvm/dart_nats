@@ -32,9 +32,12 @@ class NatsConnection {
   bool _headerSupport = false;
   bool _jetStreamAvailable = false;
 
+  // Authentication state parsed from INFO
+  bool _authRequired = false;
+  String? _nonce;
+
   // Connection state flag
   bool _isConnected = false;
-
   // Reconnection guard to prevent concurrent _reconnect() calls
   bool _isReconnecting = false;
 
@@ -81,6 +84,14 @@ class NatsConnection {
 
   /// Number of active subscriptions (for testing/debugging).
   int get subscriptionCount => _subscriptions.length;
+
+  /// Whether the server requires authentication (for testing).
+  ///
+  /// Set when the server's INFO message contains `auth_required: true`.
+  bool get authRequired => _authRequired;
+
+  /// The challenge nonce from the server's INFO (for NKey/JWT auth, for testing).
+  String? get nonce => _nonce;
 
   /// Get the JetStream context for this connection.
   JetStreamContext jetStream({
@@ -352,17 +363,75 @@ class NatsConnection {
   }
 
   Future<void> _sendConnect() async {
-    final cmd = NatsEncoder.connect(
-      version: '0.1.0',
-      lang: 'dart',
-      headers: true,
-      user: _options.user,
-      pass: _options.pass,
-      token: _options.authToken,
-      jwt: _options.jwt,
-      name: _options.name,
-      noEcho: _options.noEcho,
-    );
+    final hasAuthToken = _options.authToken != null;
+    final hasUserPass = _options.user != null;
+    final hasJwt = _options.jwt != null;
+
+    // FR-8.7: Throw actionable error when auth is required but no credentials provided
+    if (_authRequired && !hasAuthToken && !hasUserPass && !hasJwt) {
+      throw StateError(
+        'Authentication required but no credentials provided. '
+        'Set authToken, user/pass, or jwt+nkeyPath in ConnectOptions.',
+      );
+    }
+
+    Uint8List cmd;
+
+    if (hasJwt) {
+      // FR-8.3/FR-8.4: JWT + NKey authentication
+      // Attempt to sign the nonce with the NKey; stub throws UnimplementedError
+      // for now since Ed25519 signing requires native crypto.
+      String? sig;
+      String? nkey;
+      if (_nonce != null && _options.nkeyPath != null) {
+        // Signing is not yet implemented — callers must provide a signed nonce
+        // manually when ed25519 crypto is available.
+        throw UnimplementedError(
+          'NKey signing not yet implemented — provide a signed nonce manually',
+        );
+      }
+      cmd = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        headers: true,
+        jwt: _options.jwt,
+        nkey: nkey,
+        sig: sig,
+        name: _options.name,
+        noEcho: _options.noEcho,
+      );
+    } else if (hasAuthToken) {
+      // FR-8.1: Token authentication
+      cmd = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        headers: true,
+        token: _options.authToken,
+        name: _options.name,
+        noEcho: _options.noEcho,
+      );
+    } else if (hasUserPass) {
+      // FR-8.2: User/pass authentication
+      cmd = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        headers: true,
+        user: _options.user,
+        pass: _options.pass,
+        name: _options.name,
+        noEcho: _options.noEcho,
+      );
+    } else {
+      // No authentication
+      cmd = NatsEncoder.connect(
+        version: '0.1.0',
+        lang: 'dart',
+        headers: true,
+        name: _options.name,
+        noEcho: _options.noEcho,
+      );
+    }
+
     await _transport.write(cmd);
   }
 
@@ -407,9 +476,12 @@ class NatsConnection {
     if (msg.payload == null) return;
 
     try {
-      final infoJson = jsonDecode(utf8.decode(msg.payload!));
+      final infoJson =
+          jsonDecode(utf8.decode(msg.payload!)) as Map<String, dynamic>;
       _headerSupport = infoJson['headers'] == true;
       _jetStreamAvailable = infoJson['jetstream'] == true;
+      _authRequired = infoJson['auth_required'] == true;
+      _nonce = infoJson['nonce'] as String?;
 
       if (!_headerSupport) {
         throw StateError('Server does not support NATS headers');
