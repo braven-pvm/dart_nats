@@ -40,7 +40,11 @@ class NatsConnection {
   bool _isConnected = false;
   // Reconnection guard to prevent concurrent _reconnect() calls
   bool _isReconnecting = false;
+  // Idempotent close() guard
+  bool _isClosed = false;
 
+  // Maximum payload size from server INFO (null = no limit)
+  int? _maxPayload;
   // PING/PONG keepalive state
   Timer? _pingTimer;
   int _pendingPings = 0;
@@ -111,6 +115,13 @@ class NatsConnection {
     String? replyTo,
     Map<String, String>? headers,
   }) async {
+    // Validate payload size against server's max_payload limit
+    if (_maxPayload != null && data.length > _maxPayload!) {
+      throw ArgumentError(
+        'Payload size ${data.length} exceeds server max_payload of $_maxPayload',
+      );
+    }
+
     // If not connected but reconnecting, buffer the publish
     if (!_isConnected && _isReconnecting) {
       _publishBuffer.add(_BufferedPublish(
@@ -143,7 +154,7 @@ class NatsConnection {
     Uint8List data, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    final replyTo = _nuid.inbox();
+    final replyTo = _nuid.inbox(_options.inboxPrefix);
     final sub = await subscribe(replyTo);
 
     try {
@@ -214,17 +225,19 @@ class NatsConnection {
   /// Drain: wait for all pending requests to complete, then close.
   ///
   /// Implements graceful shutdown:
-  /// 1. Stops accepting new subscriptions
-  /// 2. Sends UNSUB with max for all active subscriptions
-  /// 3. Waits for pending messages to be delivered
+  /// 1. Emits ConnectionStatus.draining
+  /// 2. Sends UNSUB to all active subscriptions (halting new messages)
+  /// 3. Waits briefly for in-flight messages to be delivered
   /// 4. Closes the connection
   Future<void> drain() async {
-    if (!_isConnected) {
-      return; // Already disconnected
+    if (_isClosed || !_isConnected) {
+      return; // Already closed or disconnected
     }
 
     // Emit draining status
-    _statusController.add(ConnectionStatus.draining);
+    if (!_statusController.isClosed) {
+      _statusController.add(ConnectionStatus.draining);
+    }
 
     // For each active subscription, send UNSUB to stop receiving new messages
     // This allows in-flight messages to complete
@@ -245,13 +258,16 @@ class NatsConnection {
   }
 
   /// Close the connection.
+  ///
+  /// Idempotent: calling close() multiple times is safe and will not throw.
   Future<void> close() async {
+    // Idempotency guard: do nothing if already closed
+    if (_isClosed) return;
+    _isClosed = true;
+
     // Cancel PING timer to prevent ghost pings
     _pingTimer?.cancel();
     _pingTimer = null;
-
-    // Emit closed status BEFORE closing the controller
-    _statusController.add(ConnectionStatus.closed);
 
     _isConnected = false;
     // Close all subscriptions
@@ -262,7 +278,12 @@ class NatsConnection {
 
     await _transport.close();
     await _parser.close();
-    await _statusController.close();
+
+    // Emit closed status BEFORE closing the controller
+    if (!_statusController.isClosed) {
+      _statusController.add(ConnectionStatus.closed);
+      await _statusController.close();
+    }
   }
 
   Future<void> _connect() async {
@@ -482,6 +503,10 @@ class NatsConnection {
       _jetStreamAvailable = infoJson['jetstream'] == true;
       _authRequired = infoJson['auth_required'] == true;
       _nonce = infoJson['nonce'] as String?;
+      // Parse max_payload from server INFO for publish size validation
+      if (infoJson.containsKey('max_payload')) {
+        _maxPayload = infoJson['max_payload'] as int?;
+      }
 
       if (!_headerSupport) {
         throw StateError('Server does not support NATS headers');
