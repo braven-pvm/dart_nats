@@ -69,6 +69,9 @@ class NatsConnection {
   /// Whether the connection is currently active.
   bool get isConnected => _isConnected;
 
+  /// Number of active subscriptions (for testing/debugging).
+  int get subscriptionCount => _subscriptions.length;
+
   /// Get the JetStream context for this connection.
   JetStreamContext jetStream({
     String? domain,
