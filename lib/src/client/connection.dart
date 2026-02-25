@@ -35,9 +35,14 @@ class NatsConnection {
   // Connection state flag
   bool _isConnected = false;
 
+  // Reconnection guard to prevent concurrent _reconnect() calls
+  bool _isReconnecting = false;
+
+  // Buffer for publishes during reconnection
+  final List<_BufferedPublish> _publishBuffer = [];
+
   // Completer to wait for initial INFO from server
   Completer<void>? _infoCompleter;
-
   // Completer to wait for +OK (for verbose mode)
   final Completer<void> _okCompleter = Completer<void>();
 
@@ -90,6 +95,17 @@ class NatsConnection {
     String? replyTo,
     Map<String, String>? headers,
   }) async {
+    // If not connected but reconnecting, buffer the publish
+    if (!_isConnected && _isReconnecting) {
+      _publishBuffer.add(_BufferedPublish(
+        subject: subject,
+        data: data,
+        replyTo: replyTo,
+        headers: headers,
+      ));
+      return;
+    }
+
     if (!_isConnected) {
       throw StateError('Not connected');
     }
@@ -255,9 +271,17 @@ class NatsConnection {
         _reconnect();
       });
 
+      // Listen for transport errors (triggers reconnection)
+      _transport.errors.listen((error) {
+        if (_isConnected) {
+          _isConnected = false;
+          _statusController.add(ConnectionStatus.reconnecting);
+          _reconnect();
+        }
+      });
+
       // Listen for parsed protocol messages
       _parser.messages.listen(_handleMessage);
-
       // Step 1: Wait for INFO from server
       // NATS protocol: server sends INFO first
       _infoCompleter = Completer<void>();
@@ -361,72 +385,123 @@ class NatsConnection {
   }
 
   Future<void> _reconnect() async {
-    int attempts = 0;
-    while (_options.maxReconnectAttempts == -1 ||
-        attempts < _options.maxReconnectAttempts) {
-      _statusController.add(ConnectionStatus.reconnecting);
-      _isConnected = false;
-
-      await Future<void>.delayed(_options.reconnectDelay);
-
-      try {
-        // Create new transport
-        _transport = transport_factory.createTransport(_uri);
-        await _transport.connect();
-
-        // Create new parser
-        _parser = NatsParser();
-
-        // Listen for incoming bytes and feed to parser
-        _transport.incoming.listen((data) {
-          _parser.addBytes(data);
-        }, onError: (error) {
-          _isConnected = false;
-          _statusController.add(ConnectionStatus.closed);
-          _reconnect();
-        });
-
-        // Listen for parsed protocol messages
-        _parser.messages.listen(_handleMessage);
-
-        // Wait for INFO from server
-        _infoCompleter = Completer<void>();
-        await _infoCompleter!.future.timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            throw TimeoutException('Timeout waiting for INFO from server');
-          },
-        );
-
-        // Send CONNECT
-        await _sendConnect();
-
-        // Replay all active subscriptions (re-send SUB commands)
-        // Per spec FR-9.5: "Replay all active subscriptions (re-send SUB commands)"
-        for (final sub in _subscriptions.values) {
-          if (sub.isActive) {
-            final subCmd = NatsEncoder.sub(
-              sub.subject,
-              sub.sid,
-              queueGroup: sub.queueGroup,
-            );
-            await _transport.write(subCmd);
-          }
-        }
-
-        // Connection re-established
-        _isConnected = true;
-        _statusController.add(ConnectionStatus.connected);
-        return;
-      } catch (e) {
-        attempts++;
-        // Continue to next attempt
-      }
+    // Guard against concurrent reconnection attempts
+    if (_isReconnecting) {
+      return;
     }
+    _isReconnecting = true;
 
-    // Max attempts reached
-    _isConnected = false;
-    _statusController.add(ConnectionStatus.closed);
+    int attempts = 0;
+    Duration delay = _options.reconnectDelay;
+
+    try {
+      while (_options.maxReconnectAttempts == -1 ||
+          attempts < _options.maxReconnectAttempts) {
+        _statusController.add(ConnectionStatus.reconnecting);
+        _isConnected = false;
+
+        await Future<void>.delayed(delay);
+
+        try {
+          // Create new transport
+          _transport = transport_factory.createTransport(_uri);
+          await _transport.connect();
+
+          // Create new parser
+          _parser = NatsParser();
+
+          // Listen for incoming bytes and feed to parser
+          _transport.incoming.listen((data) {
+            _parser.addBytes(data);
+          }, onError: (error) {
+            _isConnected = false;
+            _statusController.add(ConnectionStatus.closed);
+            _reconnect();
+          });
+
+          // Listen for transport errors (triggers reconnection)
+          _transport.errors.listen((error) {
+            if (_isConnected) {
+              _isConnected = false;
+              _statusController.add(ConnectionStatus.reconnecting);
+              _reconnect();
+            }
+          });
+
+          // Listen for parsed protocol messages
+          _parser.messages.listen(_handleMessage);
+
+          // Wait for INFO from server
+          _infoCompleter = Completer<void>();
+          await _infoCompleter!.future.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw TimeoutException('Timeout waiting for INFO from server');
+            },
+          );
+
+          // Send CONNECT
+          await _sendConnect();
+
+          // Replay all active subscriptions (re-send SUB commands)
+          // Per spec FR-9.5: "Replay all active subscriptions (re-send SUB commands)"
+          for (final sub in _subscriptions.values) {
+            if (sub.isActive) {
+              final subCmd = NatsEncoder.sub(
+                sub.subject,
+                sub.sid,
+                queueGroup: sub.queueGroup,
+              );
+              await _transport.write(subCmd);
+            }
+          }
+
+          // Flush buffered publish messages
+          for (final buffered in _publishBuffer) {
+            if (buffered.headers != null ||
+                buffered.subject.startsWith('\$JS')) {
+              final cmd = NatsEncoder.hpub(
+                buffered.subject,
+                buffered.data,
+                replyTo: buffered.replyTo,
+                headers: buffered.headers,
+              );
+              await _transport.write(cmd);
+            } else {
+              final cmd = NatsEncoder.pub(
+                buffered.subject,
+                buffered.data,
+                replyTo: buffered.replyTo,
+              );
+              await _transport.write(cmd);
+            }
+          }
+          _publishBuffer.clear();
+
+          // Connection re-established
+          _isConnected = true;
+          _isReconnecting = false;
+          _statusController.add(ConnectionStatus.connected);
+          return;
+        } catch (e) {
+          attempts++;
+          // Exponential backoff: double the delay for next attempt
+          delay = Duration(
+            milliseconds: delay.inMilliseconds * 2,
+          );
+          // Continue to next attempt
+        }
+      }
+
+      // Max attempts reached
+      _isConnected = false;
+      _isReconnecting = false;
+      _statusController.add(ConnectionStatus.closed);
+    } catch (e) {
+      // Unexpected error - ensure guard is reset
+      _isReconnecting = false;
+      _statusController.add(ConnectionStatus.closed);
+    }
   }
 }
 
@@ -434,6 +509,21 @@ class NatsConnection {
 ///
 /// - Exact match: pattern equals subject
 /// - `*` matches exactly one token (e.g., `foo.*` matches `foo.bar` but NOT `foo.bar.baz`)
+/// Internal class for buffering publish calls during reconnection.
+class _BufferedPublish {
+  final String subject;
+  final Uint8List data;
+  final String? replyTo;
+  final Map<String, String>? headers;
+
+  _BufferedPublish({
+    required this.subject,
+    required this.data,
+    this.replyTo,
+    this.headers,
+  });
+}
+
 /// - `>` matches one or more trailing tokens (e.g., `foo.>` matches `foo.bar`, `foo.bar.baz`, but NOT `foo` alone)
 ///
 /// This is a pure function with no side effects.
