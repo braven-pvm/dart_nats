@@ -15,5 +15,9 @@ Transport createTransport(Uri uri) {
     return WebSocketTransport(uri);
   }
   // Default to TCP for nats://, nats+tls://, or any other scheme
-  return TcpTransport(host: uri.host, port: uri.port);
+  // When no port is specified (uri.port == 0), default to 4222
+  final port = uri.port == 0 ? 4222 : uri.port;
+  // Enable TLS for nats+tls:// scheme
+  final useTls = uri.scheme == 'nats+tls';
+  return TcpTransport(host: uri.host, port: port, useTls: useTls);
 }
