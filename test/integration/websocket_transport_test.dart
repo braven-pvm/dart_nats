@@ -217,6 +217,31 @@ void main() {
     });
   });
 
+  group('WebSocketTransport - Timeout', () {
+    test('connect() throws TimeoutException after connectTimeout duration',
+        () async {
+      // Use non-routable IP to simulate connection hang
+      final transport = WebSocketTransport(
+        Uri.parse('ws://10.255.255.1:8080'),
+        connectTimeout: const Duration(seconds: 1),
+      );
+
+      final stopwatch = Stopwatch()..start();
+
+      try {
+        await transport.connect();
+        fail('Should throw TimeoutException');
+      } on TimeoutException catch (e) {
+        stopwatch.stop();
+        expect(stopwatch.elapsed.inSeconds, lessThanOrEqualTo(2));
+        expect(e.message, contains('timeout'));
+        expect(transport.isConnected, isFalse);
+      } finally {
+        await transport.close();
+      }
+    }, timeout: const Timeout(Duration(seconds: 5)));
+  });
+
   group('WebSocketTransport - Errors', () {
     test('errors stream emits network errors', () async {
       final transport = WebSocketTransport(Uri.parse('ws://localhost:8080'));

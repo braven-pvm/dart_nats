@@ -35,6 +35,7 @@ import 'transport.dart';
 /// ```
 class WebSocketTransport implements Transport {
   final Uri uri;
+  final Duration connectTimeout;
 
   WebSocketChannel? _channel;
   StreamController<Uint8List>? _incomingController;
@@ -43,8 +44,10 @@ class WebSocketTransport implements Transport {
   bool _isConnected = false;
   bool _isClosing = false;
 
-  WebSocketTransport(this.uri);
-
+  WebSocketTransport(
+    this.uri, {
+    this.connectTimeout = const Duration(seconds: 10),
+  });
   @override
   Stream<Uint8List> get incoming {
     _incomingController ??= StreamController<Uint8List>.broadcast();
@@ -70,6 +73,15 @@ class WebSocketTransport implements Transport {
 
     try {
       _channel = WebSocketChannel.connect(uri);
+
+      // Enforce connection timeout
+      await _channel!.ready.timeout(
+        connectTimeout,
+        onTimeout: () => throw TimeoutException(
+          'WebSocket connection timeout',
+          connectTimeout,
+        ),
+      );
 
       _channelSubscription = _channel!.stream.listen(
         (message) {
