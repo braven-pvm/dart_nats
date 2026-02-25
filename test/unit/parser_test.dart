@@ -384,30 +384,44 @@ void main() {
   });
 
   group('error handling', () {
-    test('skip unknown commands', () async {
+    test('emit error for unknown commands', () async {
       final parser = NatsParser();
-      final msgFuture = parser.messages.first;
+      final msgFuture = parser.messages.take(2).toList();
 
       parser.addBytes(
         Uint8List.fromList('UNKNOWN command\r\nPING\r\n'.codeUnits),
       );
 
-      final msg = await msgFuture;
-      expect(msg.type, equals(MessageType.ping));
+      final msgs = await msgFuture;
+      expect(msgs.length, equals(2));
+
+      // First message should be an error
+      expect(msgs[0].type, equals(MessageType.err));
+      expect(msgs[0].statusDesc, contains('Unknown protocol operation'));
+
+      // Second message should be PING (parser continues)
+      expect(msgs[1].type, equals(MessageType.ping));
       parser.close();
     });
 
-    test('skip malformed MSG commands', () async {
+    test('emit error for malformed MSG commands', () async {
       final parser = NatsParser();
-      final msgFuture = parser.messages.first;
+      final msgFuture = parser.messages.take(2).toList();
 
-      // Missing payload size — parser should skip and still parse PING
+      // Missing payload size — parser should emit error and continue
       parser.addBytes(
         Uint8List.fromList('MSG subj sid\r\nPING\r\n'.codeUnits),
       );
 
-      final msg = await msgFuture;
-      expect(msg.type, equals(MessageType.ping));
+      final msgs = await msgFuture;
+      expect(msgs.length, equals(2));
+
+      // First message should be an error
+      expect(msgs[0].type, equals(MessageType.err));
+      expect(msgs[0].statusDesc, contains('Parse error'));
+
+      // Second message should be PING (parser continues)
+      expect(msgs[1].type, equals(MessageType.ping));
       parser.close();
     });
   });
