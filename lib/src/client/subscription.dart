@@ -19,6 +19,12 @@ class Subscription {
   /// Whether this subscription has been unsubscribed.
   bool _isUnsubscribed = false;
 
+  /// Maximum number of messages before auto-unsubscribe (client-side enforcement).
+  final int? _maxMsgs;
+
+  /// Count of messages received so far.
+  int _messageCount = 0;
+
   /// Backing messages stream.
   late final Stream<NatsMessage> _messages;
 
@@ -30,7 +36,7 @@ class Subscription {
     required this.subject,
     this.queueGroup,
     required Stream<NatsMessage> messages,
-  }) {
+  }) : _maxMsgs = null {
     _internalController = null;
     _messages = messages;
   }
@@ -39,11 +45,14 @@ class Subscription {
   ///
   /// Creates an internal StreamController that NatsConnection can route
   /// messages to via [addMessage].
+  ///
+  /// [maxMsgs] - optional maximum messages before auto-unsubscribing
   Subscription.owned({
     required this.sid,
     required this.subject,
     this.queueGroup,
-  }) {
+    int? maxMsgs,
+  }) : _maxMsgs = maxMsgs {
     _internalController = StreamController<NatsMessage>.broadcast(sync: true);
     _messages = _internalController!.stream;
   }
@@ -63,6 +72,12 @@ class Subscription {
         _internalController != null &&
         !_internalController!.isClosed) {
       _internalController!.add(msg);
+
+      // Client-side auto-unsub enforcement
+      _messageCount++;
+      if (_maxMsgs != null && _messageCount >= _maxMsgs!) {
+        close();
+      }
     }
   }
 

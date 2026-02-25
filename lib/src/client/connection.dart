@@ -145,6 +145,7 @@ class NatsConnection {
       sid: sid,
       subject: subject,
       queueGroup: queueGroup,
+      maxMsgs: max,
     );
 
     _subscriptions[sid] = sub;
@@ -427,4 +428,58 @@ class NatsConnection {
     _isConnected = false;
     _statusController.add(ConnectionStatus.closed);
   }
+}
+
+/// Check if a subject matches a wildcard pattern per NATS rules.
+///
+/// - Exact match: pattern equals subject
+/// - `*` matches exactly one token (e.g., `foo.*` matches `foo.bar` but NOT `foo.bar.baz`)
+/// - `>` matches one or more trailing tokens (e.g., `foo.>` matches `foo.bar`, `foo.bar.baz`, but NOT `foo` alone)
+///
+/// This is a pure function with no side effects.
+bool matchesSubject(String pattern, String subject) {
+  // Exact match
+  if (pattern == subject) {
+    return true;
+  }
+
+  // No wildcards in pattern
+  if (!pattern.contains('*') && !pattern.contains('>')) {
+    return false;
+  }
+
+  final patternTokens = pattern.split('.');
+  final subjectTokens = subject.split('.');
+
+  for (int i = 0; i < patternTokens.length; i++) {
+    final pToken = patternTokens[i];
+
+    // `>` wildcard: must be the last token, matches one or more remaining tokens
+    if (pToken == '>') {
+      // `>` must be the last token in the pattern
+      if (i != patternTokens.length - 1) {
+        return false; // Invalid pattern: `>` must be last
+      }
+      // Must match at least one remaining token
+      return subjectTokens.length > i;
+    }
+
+    // `*` wildcard: matches exactly one token
+    if (pToken == '*') {
+      // Check if there's a corresponding subject token
+      if (i >= subjectTokens.length) {
+        return false;
+      }
+      continue;
+    }
+
+    // Exact token match required
+    if (i >= subjectTokens.length || pToken != subjectTokens[i]) {
+      return false;
+    }
+  }
+
+  // All pattern tokens matched; subject must have same number of tokens
+  // (unless `>` was used, which returns early above)
+  return patternTokens.length == subjectTokens.length;
 }
