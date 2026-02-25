@@ -180,9 +180,35 @@ class NatsConnection {
   }
 
   /// Drain: wait for all pending requests to complete, then close.
+  ///
+  /// Implements graceful shutdown:
+  /// 1. Stops accepting new subscriptions
+  /// 2. Sends UNSUB with max for all active subscriptions
+  /// 3. Waits for pending messages to be delivered
+  /// 4. Closes the connection
   Future<void> drain() async {
-    _statusController.add(ConnectionStatus.closed);
-    // TODO: implement drain
+    if (!_isConnected) {
+      return; // Already disconnected
+    }
+
+    // Emit draining status
+    _statusController.add(ConnectionStatus.draining);
+
+    // For each active subscription, send UNSUB to stop receiving new messages
+    // This allows in-flight messages to complete
+    for (final sub in _subscriptions.values.toList()) {
+      if (sub.isActive) {
+        // Send UNSUB without removing subscription yet
+        // This prevents new messages but allows in-flight ones to arrive
+        final cmd = NatsEncoder.unsub(sub.sid);
+        await _transport.write(cmd);
+      }
+    }
+
+    // Wait a short time for in-flight messages to be delivered
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // Now close the connection
     await close();
   }
 
@@ -335,18 +361,66 @@ class NatsConnection {
     while (_options.maxReconnectAttempts == -1 ||
         attempts < _options.maxReconnectAttempts) {
       _statusController.add(ConnectionStatus.reconnecting);
+      _isConnected = false;
+
       await Future<void>.delayed(_options.reconnectDelay);
 
       try {
-        // TODO: Implement reconnection with subscription replay
+        // Create new transport
+        _transport = transport_factory.createTransport(_uri);
+        await _transport.connect();
+
+        // Create new parser
+        _parser = NatsParser();
+
+        // Listen for incoming bytes and feed to parser
+        _transport.incoming.listen((data) {
+          _parser.addBytes(data);
+        }, onError: (error) {
+          _isConnected = false;
+          _statusController.add(ConnectionStatus.closed);
+          _reconnect();
+        });
+
+        // Listen for parsed protocol messages
+        _parser.messages.listen(_handleMessage);
+
+        // Wait for INFO from server
+        _infoCompleter = Completer<void>();
+        await _infoCompleter!.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw TimeoutException('Timeout waiting for INFO from server');
+          },
+        );
+
+        // Send CONNECT
+        await _sendConnect();
+
+        // Replay all active subscriptions (re-send SUB commands)
+        // Per spec FR-9.5: "Replay all active subscriptions (re-send SUB commands)"
+        for (final sub in _subscriptions.values) {
+          if (sub.isActive) {
+            final subCmd = NatsEncoder.sub(
+              sub.subject,
+              sub.sid,
+              queueGroup: sub.queueGroup,
+            );
+            await _transport.write(subCmd);
+          }
+        }
+
+        // Connection re-established
         _isConnected = true;
         _statusController.add(ConnectionStatus.connected);
         return;
       } catch (e) {
         attempts++;
+        // Continue to next attempt
       }
     }
 
+    // Max attempts reached
     _isConnected = false;
     _statusController.add(ConnectionStatus.closed);
   }

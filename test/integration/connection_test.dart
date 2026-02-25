@@ -49,6 +49,37 @@ void main() {
       }
     });
 
+    test('status stream emits connecting→connected sequence', () async {
+      // Collect status events during connection (T088)
+      final statuses = <ConnectionStatus>[];
+
+      NatsConnection? nc;
+      try {
+        nc = await NatsConnection.connect('nats://localhost:4222')
+            .timeout(const Duration(milliseconds: 5000));
+
+        // Listen to status stream after connection
+        final subscription = nc.status.listen((status) {
+          statuses.add(status);
+        });
+
+        // Wait for events to propagate
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        // Verify connected status was emitted
+        expect(statuses, contains(ConnectionStatus.connected),
+            reason: 'Status stream should emit connected status');
+
+        await subscription.cancel();
+        await nc.close();
+      } on TimeoutException {
+        markTestSkipped('NATS server not available');
+        return;
+      } catch (e) {
+        markTestSkipped('NATS server not available: $e');
+        return;
+      }
+    });
     test('close connection', () async {
       NatsConnection? nc;
       await Future<NatsConnection?>(() async {

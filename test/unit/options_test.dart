@@ -297,13 +297,13 @@ void main() {
 
     test('ConnectionStatus enum values are distinct', () {
       final values = ConnectionStatus.values;
-      expect(values.length, equals(4));
+      expect(values.length, equals(5));
       expect(values, contains(ConnectionStatus.connecting));
       expect(values, contains(ConnectionStatus.connected));
       expect(values, contains(ConnectionStatus.reconnecting));
+      expect(values, contains(ConnectionStatus.draining));
       expect(values, contains(ConnectionStatus.closed));
     });
-
     test('ConnectionStatus enum does not have error value', () {
       final values = ConnectionStatus.values;
 

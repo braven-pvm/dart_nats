@@ -128,6 +128,9 @@ enum ConnectionStatus {
   /// Disconnected (temporarily) and attempting to reconnect.
   reconnecting,
 
+  /// Draining subscriptions before close.
+  draining,
+
   /// Connection permanently closed.
   closed,
 }
