@@ -41,9 +41,8 @@ void main() {
         final requestData = 'ping';
         final replyData = 'pong';
 
-        // Subscribe a responder on the request subject
-        final responderSub = conn.subscribe(requestSubject);
-
+// Subscribe a responder on the request subject
+        final responderSub = await conn.subscribe(requestSubject);
         // Listen for requests and reply to the inbox (fire-and-forget)
         responderSub.messages.first.then((msg) async {
           expect(msg.replyTo, isNotNull,
@@ -115,9 +114,8 @@ void main() {
         final requestData = 'ping';
         final replyData = 'pong';
 
-        // Subscribe a responder
-        final responderSub = conn.subscribe(requestSubject);
-
+// Subscribe responder
+        final responderSub = await conn.subscribe(requestSubject);
         final replyFuture = responderSub.messages.first.then((msg) async {
           await conn.publish(
             msg.replyTo!,
@@ -199,9 +197,8 @@ void main() {
         final baseSubject = 'test.request.sequential';
         final replyData = 'reply';
 
-        // Subscribe a responder for multiple subjects (wildcard)
-        final responderSub = conn.subscribe('test.request.sequential.>');
-
+// Subscribe a responder for multiple subjects (wildcard)
+        final responderSub = await conn.subscribe('test.request.sequential.>');
         // Start responder in background
         final responderFuture = responderSub.messages.listen((msg) async {
           if (msg.replyTo != null) {
@@ -255,8 +252,7 @@ void main() {
 
         // Pre-create subscription with an immediately-available message
         // This simulates a very fast responder that replies instantly
-        final responderSub = conn.subscribe(requestSubject);
-
+        final responderSub = await conn.subscribe(requestSubject);
         // Set up a responder that replies IMMEDIATELY (no delay)
         final responderFuture = responderSub.messages.listen((msg) async {
           if (msg.replyTo != null) {
@@ -306,8 +302,7 @@ void main() {
         final replyData = 'reply';
 
         // Subscribe a responder
-        final responderSub = conn.subscribe(requestSubject);
-
+        final responderSub = await conn.subscribe(requestSubject);
         final responderFuture = responderSub.messages.listen((msg) async {
           if (msg.replyTo != null) {
             await conn.publish(

@@ -137,8 +137,8 @@ void main() {
         final subject = 'test.publish.subscribe';
         final testData = 'Hello, NATS!';
 
-        // Subscribe to the subject
-        final sub = conn.subscribe(subject);
+// Subscribe to the subject
+        final sub = await conn.subscribe(subject);
         expect(sub.isActive, isTrue);
         expect(sub.subject, equals(subject));
 
@@ -188,8 +188,8 @@ void main() {
       try {
         final subject = 'test.unsubscribe';
 
-        // Subscribe to the subject
-        final sub = conn.subscribe(subject);
+// Subscribe to the subject
+        final sub = await conn.subscribe(subject);
         expect(sub.isActive, isTrue);
 
         // Unsubscribe
@@ -199,7 +199,7 @@ void main() {
         expect(sub.isActive, isFalse);
 
         // Verify unsubscribed subscription is removed from tracking
-        final sub2 = conn.subscribe(subject);
+        final sub2 = await conn.subscribe(subject);
         expect(sub2.sid, isNot(equals(sub.sid)));
       } finally {
         await conn.close();
@@ -231,8 +231,8 @@ void main() {
         final subject = 'test.max.messages';
         final numMessages = 3;
 
-        // Subscribe with max messages
-        final sub = conn.subscribe(subject, max: numMessages);
+// Subscribe with max messages
+        final sub = await conn.subscribe(subject, max: numMessages);
         expect(sub.isActive, isTrue);
 
         // Publish multiple messages
@@ -290,9 +290,8 @@ void main() {
         final requestData = 'ping';
         final replyData = 'pong';
 
-        // Subscribe to request subject
-        final sub = conn.subscribe(requestSubject);
-
+// Subscribe to request subject
+        final sub = await conn.subscribe(requestSubject);
         // Listen for requests and reply
         final replyFuture = sub.messages.first.then((msg) async {
           expect(msg.subject, equals(requestSubject));

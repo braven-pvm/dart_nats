@@ -41,11 +41,13 @@ class NatsConnection {
   // Buffer for publishes during reconnection
   final List<_BufferedPublish> _publishBuffer = [];
 
-  // Completer to wait for initial INFO from server
+  // Completer to wait for initial INFO from server (current attempt only)
   Completer<void>? _infoCompleter;
   // Completer to wait for +OK (for verbose mode)
   final Completer<void> _okCompleter = Completer<void>();
 
+  // Timeout for receiving INFO during a reconnect attempt (shorter than initial)
+  static const Duration _reconnectInfoTimeout = Duration(seconds: 3);
   NatsConnection._(this._uri, this._options) {
     _options.validate();
     _nuid = Nuid();
@@ -128,7 +130,7 @@ class NatsConnection {
     Duration timeout = const Duration(seconds: 10),
   }) async {
     final replyTo = _nuid.inbox();
-    final sub = subscribe(replyTo);
+    final sub = await subscribe(replyTo);
 
     try {
       await publish(subject, data, replyTo: replyTo);
@@ -145,11 +147,11 @@ class NatsConnection {
   ///
   /// [queueGroup] - optional queue group name for load balancing
   /// [max] - optional max messages before auto-unsubscribe
-  Subscription subscribe(
+  Future<Subscription> subscribe(
     String subject, {
     String? queueGroup,
     int? max,
-  }) {
+  }) async {
     if (!_isConnected) {
       throw StateError('Not connected');
     }
@@ -166,18 +168,14 @@ class NatsConnection {
 
     _subscriptions[sid] = sub;
 
-    // Send SUB command
+    // Send SUB command (await to ensure ordering and delivery)
     final cmd = NatsEncoder.sub(subject, sid, queueGroup: queueGroup);
-    _transport.write(cmd).catchError((_) {
-      _statusController.add(ConnectionStatus.closed);
-    });
+    await _transport.write(cmd);
 
     // Send auto-UNSUB if max is specified
     if (max != null) {
       final unsubCmd = NatsEncoder.unsub(sid, maxMsgs: max);
-      _transport.write(unsubCmd).catchError((_) {
-        // Log error
-      });
+      await _transport.write(unsubCmd);
     }
 
     return sub;
@@ -265,22 +263,29 @@ class NatsConnection {
       // Listen for incoming bytes and feed to parser
       _transport.incoming.listen((data) {
         _parser.addBytes(data);
-      }, onError: (error) {
-        _isConnected = false;
-        _statusController.add(ConnectionStatus.closed);
-        _reconnect();
-      });
-
-      // Listen for transport errors (triggers reconnection)
-      _transport.errors.listen((error) {
-        if (_isConnected) {
+      }, onError: (Object error) {
+        // Abort any pending INFO wait so _reconnect() can proceed immediately
+        if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
+          _infoCompleter!.completeError(error);
+        }
+        if (_isConnected && !_isReconnecting) {
           _isConnected = false;
-          _statusController.add(ConnectionStatus.reconnecting);
+          // _reconnect() will emit ConnectionStatus.reconnecting
           _reconnect();
         }
       });
-
-      // Listen for parsed protocol messages
+      // Listen for transport errors (triggers reconnection)
+      _transport.errors.listen((Object error) {
+        // Abort any pending INFO wait so _reconnect() can proceed immediately
+        if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
+          _infoCompleter!.completeError(error);
+        }
+        if (_isConnected && !_isReconnecting) {
+          _isConnected = false;
+          // _reconnect() will emit ConnectionStatus.reconnecting
+          _reconnect();
+        }
+      }); // Listen for parsed protocol messages
       _parser.messages.listen(_handleMessage);
       // Step 1: Wait for INFO from server
       // NATS protocol: server sends INFO first
@@ -394,49 +399,96 @@ class NatsConnection {
     int attempts = 0;
     Duration delay = _options.reconnectDelay;
 
+    // Emit initial reconnecting status before first attempt
+    _statusController.add(ConnectionStatus.reconnecting);
+
     try {
       while (_options.maxReconnectAttempts == -1 ||
           attempts < _options.maxReconnectAttempts) {
-        _statusController.add(ConnectionStatus.reconnecting);
-        _isConnected = false;
-
+        // Wait before attempting (first attempt uses base delay)
         await Future<void>.delayed(delay);
 
         try {
-          // Create new transport
-          _transport = transport_factory.createTransport(_uri);
-          await _transport.connect();
+          // Create new transport and parser for this attempt
+          final newTransport = transport_factory.createTransport(_uri);
+          await newTransport.connect();
+          final newParser = NatsParser();
 
-          // Create new parser
-          _parser = NatsParser();
+          // Use a local completer for this specific attempt's INFO wait.
+          // Errors on either the incoming or errors stream abort it.
+          final infoCompleter = Completer<void>();
 
-          // Listen for incoming bytes and feed to parser
-          _transport.incoming.listen((data) {
-            _parser.addBytes(data);
-          }, onError: (error) {
-            _isConnected = false;
-            _statusController.add(ConnectionStatus.closed);
-            _reconnect();
+          StreamSubscription<Uint8List>? incomingSub;
+          StreamSubscription<Object>? errorsSub;
+          StreamSubscription<NatsMessage>? msgSub;
+
+          // Abort helper — errors (transport rejected, socket closed, timeout)
+          void abortInfo(Object error) {
+            if (!infoCompleter.isCompleted) {
+              infoCompleter.completeError(error);
+            }
+          }
+
+          // Feed parser from incoming bytes
+          incomingSub = newTransport.incoming.listen(
+            (data) => newParser.addBytes(data),
+            onError: abortInfo,
+          );
+
+          // Transport-level errors also abort the INFO wait
+          errorsSub = newTransport.errors.listen(abortInfo);
+
+          // Wait for INFO message from server
+          msgSub = newParser.messages.listen((msg) {
+            if (msg.type == MessageType.info && !infoCompleter.isCompleted) {
+              infoCompleter.complete();
+            }
           });
 
-          // Listen for transport errors (triggers reconnection)
-          _transport.errors.listen((error) {
-            if (_isConnected) {
+          try {
+            await infoCompleter.future.timeout(_reconnectInfoTimeout,
+                onTimeout: () {
+              throw TimeoutException(
+                  'Timeout waiting for INFO during reconnect');
+            });
+          } finally {
+            // Cancel all temporary INFO-phase subscriptions.
+            // Don't await — broadcast stream listener removal is synchronous
+            // and we don't want to yield to the event loop mid-setup.
+            unawaited(incomingSub.cancel());
+            unawaited(errorsSub.cancel());
+            unawaited(msgSub.cancel());
+          } // Replace the instance transport and parser with the new ones
+          _transport = newTransport;
+          _parser = newParser;
+          // Update infoCompleter instance field (for _handleMessage)
+          _infoCompleter = Completer<void>()..complete();
+
+          // Set up permanent message handler
+          _parser.messages.listen(_handleMessage);
+
+          // Set up permanent error handler (triggers future reconnects)
+          _transport.errors.listen((Object error) {
+            if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
+              _infoCompleter!.completeError(error);
+            }
+            if (_isConnected && !_isReconnecting) {
               _isConnected = false;
-              _statusController.add(ConnectionStatus.reconnecting);
               _reconnect();
             }
           });
 
-          // Listen for parsed protocol messages
-          _parser.messages.listen(_handleMessage);
-
-          // Wait for INFO from server
-          _infoCompleter = Completer<void>();
-          await _infoCompleter!.future.timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw TimeoutException('Timeout waiting for INFO from server');
+          // Set up permanent incoming handler
+          _transport.incoming.listen(
+            (data) => _parser.addBytes(data),
+            onError: (Object error) {
+              if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
+                _infoCompleter!.completeError(error);
+              }
+              if (_isConnected && !_isReconnecting) {
+                _isConnected = false;
+                _reconnect();
+              }
             },
           );
 
@@ -444,8 +496,7 @@ class NatsConnection {
           await _sendConnect();
 
           // Replay all active subscriptions (re-send SUB commands)
-          // Per spec FR-9.5: "Replay all active subscriptions (re-send SUB commands)"
-          for (final sub in _subscriptions.values) {
+          for (final sub in _subscriptions.values.toList()) {
             if (sub.isActive) {
               final subCmd = NatsEncoder.sub(
                 sub.subject,
@@ -486,19 +537,22 @@ class NatsConnection {
         } catch (e) {
           attempts++;
           // Exponential backoff: double the delay for next attempt
-          delay = Duration(
-            milliseconds: delay.inMilliseconds * 2,
-          );
-          // Continue to next attempt
+          delay = Duration(milliseconds: delay.inMilliseconds * 2);
+
+          // Emit reconnecting status for next attempt if more remain
+          if (_options.maxReconnectAttempts == -1 ||
+              attempts < _options.maxReconnectAttempts) {
+            _statusController.add(ConnectionStatus.reconnecting);
+          }
         }
       }
 
-      // Max attempts reached
+      // Max attempts reached — emit closed
       _isConnected = false;
       _isReconnecting = false;
       _statusController.add(ConnectionStatus.closed);
     } catch (e) {
-      // Unexpected error - ensure guard is reset
+      // Unexpected error — reset guard and close
       _isReconnecting = false;
       _statusController.add(ConnectionStatus.closed);
     }

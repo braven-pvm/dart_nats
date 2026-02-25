@@ -92,6 +92,9 @@ class TcpTransport implements Transport {
           }
         },
         onDone: () async {
+          if (_errorsController?.isClosed == false) {
+            _errorsController?.add(SocketException('Connection closed'));
+          }
           _isConnected = false;
           await _incomingController?.close();
           await _errorsController?.close();
