@@ -22,9 +22,9 @@
 | Tier | Files | Tests | Status |
 |------|-------|-------|--------|
 | Smoke | 1 | ~5 | ✅ All passing |
-| Unit | 12 | ~322 | ✅ All passing |
+| Unit | 12 | 318 | ✅ All passing (verified 2026-02-23) |
 | Integration | 10 | ~69 | ✅ Most passing (1 flaky reconnection test) |
-| **Total** | **23** | **~396** | **99.7% passing** |
+| **Total** | **23** | **~392** | **~99.7% passing** |
 
 ### Coverage by Module
 

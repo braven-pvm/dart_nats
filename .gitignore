@@ -1,7 +1,12 @@
 # gitignore for Dart packages
 
-# Miscellaneous
-*.class
+# Orchestra task orchestration system
+.orchestra/*.db
+.orchestra/*.db-wal
+.orchestra/*.db-shm
+.orchestra/.signal
+.orchestra/sprint-memory/
+# Miscellaneous*.class
 *.log
 *.pyc
 *.swp

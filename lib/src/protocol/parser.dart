@@ -60,14 +60,46 @@ class NatsParser {
             _advance(crlfIdx + 2);
             break;
           default:
-            // Unknown op — skip line
+            // Unknown op — skip line with error
+            _emitParseError(
+              controlLine,
+              'Unknown protocol operation',
+              'Operation "$op" is not recognized by this parser',
+              bytes,
+            );
             _advance(crlfIdx + 2);
         }
       } catch (e) {
-        // Parse error — skip this line and continue
+        // Parse error — emit actionable error and skip this line
+        _emitParseError(
+          controlLine,
+          'Parse error',
+          e.toString(),
+          bytes,
+        );
         _advance(crlfIdx + 2);
       }
     }
+  }
+
+  /// Emit actionable parse error with context for debugging.
+  void _emitParseError(
+    String controlLine,
+    String errorType,
+    String details,
+    Uint8List buffer,
+  ) {
+    final safeLine = controlLine.length > 100
+        ? '${controlLine.substring(0, 100)}...'
+        : controlLine;
+
+    final bufferInfo = 'buffer=${buffer.length} bytes';
+
+    final message = '$errorType: $details. '
+        'Control line: "$safeLine" ($bufferInfo). '
+        'See https://docs.nats.io/reference/reference-protocols/nats-protocol';
+
+    _emit(NatsMessage.err(message));
   }
 
   /// Returns true if a complete message was consumed, false if more bytes are needed.
@@ -97,7 +129,9 @@ class NatsParser {
         hdrBytes = int.parse(parts[3]);
         totalBytes = int.parse(parts[4]);
       } else {
-        throw FormatException('Invalid HMSG format: $line');
+        throw FormatException(
+          'Invalid HMSG format: expected 5-6 parts, got ${parts.length} in "$line"',
+        );
       }
     } else {
       // MSG <subject> <sid> [reply] <totalBytes>
@@ -112,10 +146,11 @@ class NatsParser {
         // No reply-to
         totalBytes = int.parse(parts[3]);
       } else {
-        throw FormatException('Invalid MSG format: $line');
+        throw FormatException(
+          'Invalid MSG format: expected 4-5 parts, got ${parts.length} in "$line"',
+        );
       }
     }
-
     final ctrlLen = line.length + 2; // +2 for \r\n
     final requiredLen = ctrlLen + totalBytes + 2; // +2 for trailing \r\n
 
