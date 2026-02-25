@@ -38,6 +38,9 @@ class NatsConnection {
   // Reconnection guard to prevent concurrent _reconnect() calls
   bool _isReconnecting = false;
 
+  // PING/PONG keepalive state
+  Timer? _pingTimer;
+  int _pendingPings = 0;
   // Buffer for publishes during reconnection
   final List<_BufferedPublish> _publishBuffer = [];
 
@@ -232,11 +235,14 @@ class NatsConnection {
 
   /// Close the connection.
   Future<void> close() async {
+    // Cancel PING timer to prevent ghost pings
+    _pingTimer?.cancel();
+    _pingTimer = null;
+
     // Emit closed status BEFORE closing the controller
     _statusController.add(ConnectionStatus.closed);
 
     _isConnected = false;
-
     // Close all subscriptions
     for (final sub in _subscriptions.values) {
       sub.close();
@@ -309,11 +315,40 @@ class NatsConnection {
       // Connection complete
       _isConnected = true;
       _statusController.add(ConnectionStatus.connected);
+
+      // Start PING keepalive timer
+      _startPingTimer();
     } catch (e) {
       _isConnected = false;
       _statusController.add(ConnectionStatus.closed);
       rethrow;
     }
+  }
+
+  /// Start the PING keepalive timer.
+  ///
+  /// Sends PING at each pingInterval and increments _pendingPings.
+  /// If _pendingPings >= maxPingOut, triggers reconnection.
+  void _startPingTimer() {
+    _pingTimer?.cancel();
+    _pingTimer = Timer.periodic(_options.pingInterval, (_) async {
+      if (!_isConnected) return;
+      if (_pendingPings >= _options.maxPingOut) {
+        // Too many unanswered PINGs — trigger reconnection
+        _pendingPings = 0;
+        _pingTimer?.cancel();
+        _pingTimer = null;
+        if (!_isReconnecting) {
+          _isConnected = false;
+          _reconnect();
+        }
+        return;
+      }
+      _pendingPings++;
+      await _transport.write(NatsEncoder.ping()).catchError((Object e) {
+        // Ignore write errors; transport error handler will trigger reconnect
+      });
+    });
   }
 
   Future<void> _sendConnect() async {
@@ -349,6 +384,10 @@ class NatsConnection {
       case MessageType.ping:
         _respondPong();
         break;
+      case MessageType.pong:
+        // Reset pending pings counter on PONG receipt
+        _pendingPings = 0;
+        break;
       case MessageType.msg:
       case MessageType.hmsg:
         // Route message to subscription by SID
@@ -360,8 +399,6 @@ class NatsConnection {
       case MessageType.err:
         // Handle server error
         _statusController.add(ConnectionStatus.closed);
-        break;
-      default:
         break;
     }
   }
@@ -396,6 +433,10 @@ class NatsConnection {
     }
     _isReconnecting = true;
 
+    // Cancel ping timer during reconnection to prevent ghost pings
+    _pingTimer?.cancel();
+    _pingTimer = null;
+    _pendingPings = 0;
     int attempts = 0;
     Duration delay = _options.reconnectDelay;
 
@@ -533,6 +574,9 @@ class NatsConnection {
           _isConnected = true;
           _isReconnecting = false;
           _statusController.add(ConnectionStatus.connected);
+
+          // Restart PING keepalive timer after reconnect
+          _startPingTimer();
           return;
         } catch (e) {
           attempts++;
