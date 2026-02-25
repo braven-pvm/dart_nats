@@ -32,6 +32,15 @@ class NatsConnection {
   bool _headerSupport = false;
   bool _jetStreamAvailable = false;
 
+  // Connection state flag
+  bool _isConnected = false;
+
+  // Completer to wait for initial INFO from server
+  Completer<void>? _infoCompleter;
+
+  // Completer to wait for +OK (for verbose mode)
+  final Completer<void> _okCompleter = Completer<void>();
+
   NatsConnection._(this._uri, this._options) {
     _options.validate();
     _nuid = Nuid();
@@ -57,6 +66,9 @@ class NatsConnection {
   /// Stream of connection status changes.
   Stream<ConnectionStatus> get status => _statusController.stream;
 
+  /// Whether the connection is currently active.
+  bool get isConnected => _isConnected;
+
   /// Get the JetStream context for this connection.
   JetStreamContext jetStream({
     String? domain,
@@ -75,6 +87,9 @@ class NatsConnection {
     String? replyTo,
     Map<String, String>? headers,
   }) async {
+    if (!_isConnected) {
+      throw StateError('Not connected');
+    }
     // Use HPUB if headers or for JetStream subjects
     if (headers != null || subject.startsWith('\$JS')) {
       final cmd =
@@ -108,19 +123,24 @@ class NatsConnection {
   }
 
   /// Subscribe to a subject.
+  ///
+  /// [queueGroup] - optional queue group name for load balancing
+  /// [max] - optional max messages before auto-unsubscribe
   Subscription subscribe(
     String subject, {
     String? queueGroup,
+    int? max,
   }) {
+    if (!_isConnected) {
+      throw StateError('Not connected');
+    }
+
     final sid = _nuid.next();
 
-    final msgStream =
-        _parser.messages.where((msg) => msg.sid == sid).asBroadcastStream();
-
-    final sub = Subscription(
+    // Create a subscription that owns its internal StreamController
+    final sub = Subscription.owned(
       sid: sid,
       subject: subject,
-      messages: msgStream,
       queueGroup: queueGroup,
     );
 
@@ -131,14 +151,32 @@ class NatsConnection {
     _transport.write(cmd).catchError((_) {
       _statusController.add(ConnectionStatus.closed);
     });
+
+    // Send auto-UNSUB if max is specified
+    if (max != null) {
+      final unsubCmd = NatsEncoder.unsub(sid, maxMsgs: max);
+      _transport.write(unsubCmd).catchError((_) {
+        // Log error
+      });
+    }
+
     return sub;
   }
 
   /// Unsubscribe from a subscription.
   Future<void> unsubscribe(Subscription sub) async {
+    if (!_subscriptions.containsKey(sub.sid)) {
+      return; // Already unsubscribed
+    }
+
     _subscriptions.remove(sub.sid);
+
+    // Send UNSUB command to server
     final cmd = NatsEncoder.unsub(sub.sid);
     await _transport.write(cmd);
+
+    // Mark subscription as inactive and close its stream
+    sub.close();
   }
 
   /// Drain: wait for all pending requests to complete, then close.
@@ -150,15 +188,25 @@ class NatsConnection {
 
   /// Close the connection.
   Future<void> close() async {
+    // Emit closed status BEFORE closing the controller
+    _statusController.add(ConnectionStatus.closed);
+
+    _isConnected = false;
+
+    // Close all subscriptions
+    for (final sub in _subscriptions.values) {
+      sub.close();
+    }
     _subscriptions.clear();
+
     await _transport.close();
     await _parser.close();
     await _statusController.close();
-    _statusController.add(ConnectionStatus.closed);
   }
 
   Future<void> _connect() async {
     _statusController.add(ConnectionStatus.connecting);
+    _isConnected = false;
 
     try {
       // Create transport
@@ -168,22 +216,42 @@ class NatsConnection {
       // Create parser
       _parser = NatsParser();
 
-      // Listen for incoming messages
+      // Listen for incoming bytes and feed to parser
       _transport.incoming.listen((data) {
         _parser.addBytes(data);
       }, onError: (error) {
+        _isConnected = false;
         _statusController.add(ConnectionStatus.closed);
         _reconnect();
       });
-      // Listen for parsed messages
+
+      // Listen for parsed protocol messages
       _parser.messages.listen(_handleMessage);
 
-      // Send CONNECT
+      // Step 1: Wait for INFO from server
+      // NATS protocol: server sends INFO first
+      _infoCompleter = Completer<void>();
+
+      // Wait for INFO with timeout
+      await _infoCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('Timeout waiting for INFO from server');
+        },
+      );
+
+      // Step 2: Send CONNECT to server
       await _sendConnect();
 
-      // Wait for INFO
+      // Step 3: For verbose mode, wait for +OK
+      // (Non-verbose mode doesn't wait for +OK)
+      // Default behavior: don't wait for +OK
+
+      // Connection complete
+      _isConnected = true;
       _statusController.add(ConnectionStatus.connected);
     } catch (e) {
+      _isConnected = false;
       _statusController.add(ConnectionStatus.closed);
       rethrow;
     }
@@ -208,16 +276,31 @@ class NatsConnection {
     switch (msg.type) {
       case MessageType.info:
         _processInfo(msg);
+        // Complete the INFO wait
+        if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
+          _infoCompleter!.complete();
+        }
+        break;
+      case MessageType.ok:
+        // Complete the +OK wait (used in verbose mode)
+        if (!_okCompleter.isCompleted) {
+          _okCompleter.complete();
+        }
         break;
       case MessageType.ping:
         _respondPong();
         break;
       case MessageType.msg:
       case MessageType.hmsg:
-        // Route to subscriptions
+        // Route message to subscription by SID
         if (msg.sid != null && _subscriptions.containsKey(msg.sid)) {
-          // Message will be picked up by the subscription's stream
+          final sub = _subscriptions[msg.sid]!;
+          sub.addMessage(msg);
         }
+        break;
+      case MessageType.err:
+        // Handle server error
+        _statusController.add(ConnectionStatus.closed);
         break;
       default:
         break;
@@ -256,6 +339,7 @@ class NatsConnection {
 
       try {
         // TODO: Implement reconnection with subscription replay
+        _isConnected = true;
         _statusController.add(ConnectionStatus.connected);
         return;
       } catch (e) {
@@ -263,6 +347,7 @@ class NatsConnection {
       }
     }
 
+    _isConnected = false;
     _statusController.add(ConnectionStatus.closed);
   }
 }
