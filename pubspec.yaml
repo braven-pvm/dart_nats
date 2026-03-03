@@ -1,21 +1,15 @@
 name: nats_dart
-description: A native Dart/Flutter NATS client with full JetStream and KeyValue support. Supports TCP (native) and WebSocket (Flutter Web) transports with a unified API across all platforms.
+description: A pure Dart NATS client with full JetStream and KeyValue support. Supports TCP (native) and WebSocket (web) transports with a unified API across all platforms.
 version: 0.1.0
 publish_to: https://pub.dev
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
-  flutter: ">=3.10.0"
 
 dependencies:
-  flutter:
-    sdk: flutter
   web_socket_channel: ^2.4.0
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
   lints: ^2.1.0
   mockito: ^5.4.0
   test: ^1.24.0
-flutter:

@@ -87,9 +87,11 @@ void main() {
             'test.request.no.responder.${DateTime.now().millisecondsSinceEpoch}';
         final requestData = 'ping';
 
-        // Make request with short timeout on subject with no subscriber
-        expect(
-          () => conn.request(
+        // Make request with short timeout on subject with no subscriber.
+        // Use expectLater so the test waits for the async timeout before
+        // the finally block closes the connection.
+        await expectLater(
+          conn.request(
             requestSubject,
             Uint8List.fromList(requestData.codeUnits),
             timeout: const Duration(milliseconds: 200),

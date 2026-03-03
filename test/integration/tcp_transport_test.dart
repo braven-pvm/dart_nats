@@ -11,7 +11,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:nats_dart/src/transport/tcp_transport.dart';
 
 void main() {
@@ -230,8 +230,13 @@ void main() {
     });
 
     test('connection failure emits error on errors stream', () async {
-      // Try to connect to invalid port
-      final transport = TcpTransport(host: 'localhost', port: 59999);
+      // Use a short connectTimeout so this fails fast rather than waiting
+      // for the OS default connection timeout (~10 s).
+      final transport = TcpTransport(
+        host: 'localhost',
+        port: 59999,
+        connectTimeout: const Duration(seconds: 2),
+      );
       final errors = <Object>[];
 
       transport.errors.listen((error) => errors.add(error));
@@ -272,9 +277,14 @@ void main() {
 
   group('TcpTransport - TLS', () {
     test('connect with TLS enabled', () async {
-      // Most NATS servers don't have TLS on by default, so skip if not available
-      final transport =
-          TcpTransport(host: 'localhost', port: 4223, useTls: true);
+      // Most NATS servers don't have TLS on by default, so skip if not available.
+      // Use a short connectTimeout so we don't wait 10 s on a closed port.
+      final transport = TcpTransport(
+        host: 'localhost',
+        port: 4223,
+        useTls: true,
+        connectTimeout: const Duration(seconds: 2),
+      );
       try {
         await transport.connect();
         expect(transport.isConnected, isTrue);

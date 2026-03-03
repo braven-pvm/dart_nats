@@ -97,12 +97,20 @@ class AuthenticatedFakeNatsServer {
         if (line.startsWith('CONNECT ')) {
           _handleConnect(client, line);
         } else if (line.startsWith('PING')) {
-          client.write('PONG\r\n');
+          try {
+            client.write('PONG\r\n');
+          } catch (_) {
+            // Socket may already be destroyed if client was rejected
+          }
         } else if (line.startsWith('SUB ') ||
             line.startsWith('UNSUB ') ||
             line.startsWith('PUB ') ||
             line.startsWith('HPUB ')) {
-          client.write('+OK\r\n');
+          try {
+            client.write('+OK\r\n');
+          } catch (_) {
+            // Socket may already be destroyed
+          }
         }
         start = i + 2;
       }
@@ -260,19 +268,19 @@ void main() {
     test('connect() throws when invalid user/pass credentials are provided',
         () async {
       // The server rejects wrong credentials by sending -ERR and closing.
-      // NatsConnection should propagate a failure (error or timeout).
-      await expectLater(
-        NatsConnection.connect(
+      // NatsConnection should propagate a failure instead of silently succeeding.
+      bool threw = false;
+      try {
+        final nc = await NatsConnection.connect(
           'nats://127.0.0.1:${server.port}',
           options: const ConnectOptions(user: 'wrong', pass: 'bad'),
-        ).timeout(const Duration(seconds: 5)),
-        anyOf(
-          throwsA(isA<StateError>()),
-          throwsA(isA<TimeoutException>()),
-          throwsA(isA<Exception>()),
-          throwsA(isA<Error>()),
-        ),
-      );
+        ).timeout(const Duration(seconds: 5));
+        await nc.close();
+      } catch (_) {
+        threw = true;
+      }
+      expect(threw, isTrue,
+          reason: 'connect() should throw on invalid credentials');
     });
   });
 
@@ -294,18 +302,17 @@ void main() {
     test('connect() fails when wrong token is provided', () async {
       // The server sends -ERR and closes the connection.
       // The client should throw rather than silently succeed.
-      await expectLater(
-        NatsConnection.connect(
+      bool threw = false;
+      try {
+        final nc = await NatsConnection.connect(
           'nats://127.0.0.1:${server.port}',
           options: const ConnectOptions(authToken: 'wrong-token'),
-        ).timeout(const Duration(seconds: 5)),
-        anyOf(
-          throwsA(isA<StateError>()),
-          throwsA(isA<TimeoutException>()),
-          throwsA(isA<Exception>()),
-          throwsA(isA<Error>()),
-        ),
-      );
+        ).timeout(const Duration(seconds: 5));
+        await nc.close();
+      } catch (_) {
+        threw = true;
+      }
+      expect(threw, isTrue, reason: 'connect() should throw on wrong token');
     });
   });
 

@@ -43,6 +43,9 @@ class TcpTransport implements Transport {
   StreamSubscription<Uint8List>? _socketSubscription;
   bool _isConnected = false;
   bool _isClosing = false;
+  // Serializes concurrent write() calls so socket.add/flush are never
+  // called concurrently (dart:io throws if addStream is active during add).
+  Future<void> _writeChain = Future<void>.value();
 
   TcpTransport({
     required this.host,
@@ -112,12 +115,21 @@ class TcpTransport implements Transport {
   }
 
   @override
-  Future<void> write(Uint8List data) async {
+  Future<void> write(Uint8List data) {
     if (!_isConnected || _socket == null) {
-      throw StateError('Transport not connected');
+      return Future.error(StateError('Transport not connected'));
     }
-    _socket!.add(data);
-    await _socket!.flush();
+    // Chain writes to prevent concurrent socket.add/flush calls which
+    // would throw "StreamSink is bound to a stream" in dart:io.
+    final future = _writeChain.then<void>((_) async {
+      if (_isConnected && _socket != null) {
+        _socket!.add(data);
+        await _socket!.flush();
+      }
+    });
+    // Keep the chain alive even when individual writes fail.
+    _writeChain = future.catchError((_) {});
+    return future;
   }
 
   @override

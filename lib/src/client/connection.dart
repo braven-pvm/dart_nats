@@ -55,6 +55,9 @@ class NatsConnection {
   Completer<void>? _infoCompleter;
   // Completer to wait for +OK (for verbose mode)
   final Completer<void> _okCompleter = Completer<void>();
+  // Completer used during _connect() to detect early -ERR (auth failure).
+  // Completed with PONG/+OK on success, or error on -ERR / transport close.
+  Completer<void>? _connectAckCompleter;
 
   // Timeout for receiving INFO during a reconnect attempt (shorter than initial)
   static const Duration _reconnectInfoTimeout = Duration(seconds: 3);
@@ -161,6 +164,13 @@ class NatsConnection {
       await publish(subject, data, replyTo: replyTo);
 
       final msg = await sub.messages.timeout(timeout).first;
+
+      // NATS 2.x: server sends status 503 when no subscribers exist for the
+      // subject and no_responders=true was negotiated in CONNECT.
+      // Translate this to TimeoutException to match caller expectations.
+      if (msg.statusCode == 503) {
+        throw TimeoutException('No responders available for subject: $subject');
+      }
 
       return msg;
     } finally {
@@ -306,6 +316,10 @@ class NatsConnection {
         if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
           _infoCompleter!.completeError(error);
         }
+        if (_connectAckCompleter != null &&
+            !_connectAckCompleter!.isCompleted) {
+          _connectAckCompleter!.completeError(error);
+        }
         if (_isConnected && !_isReconnecting) {
           _isConnected = false;
           // _reconnect() will emit ConnectionStatus.reconnecting
@@ -317,6 +331,10 @@ class NatsConnection {
         // Abort any pending INFO wait so _reconnect() can proceed immediately
         if (_infoCompleter != null && !_infoCompleter!.isCompleted) {
           _infoCompleter!.completeError(error);
+        }
+        if (_connectAckCompleter != null &&
+            !_connectAckCompleter!.isCompleted) {
+          _connectAckCompleter!.completeError(error);
         }
         if (_isConnected && !_isReconnecting) {
           _isConnected = false;
@@ -340,9 +358,32 @@ class NatsConnection {
       // Step 2: Send CONNECT to server
       await _sendConnect();
 
-      // Step 3: For verbose mode, wait for +OK
-      // (Non-verbose mode doesn't wait for +OK)
-      // Default behavior: don't wait for +OK
+      // Step 3: Send a PING immediately after CONNECT.
+      // The server responds with PONG once CONNECT is processed (non-verbose).
+      // If auth fails, the server sends -ERR before PONG.
+      //
+      // Race-condition guard: call ackFuture.ignore() BEFORE yielding to the
+      // event loop via `await write()`. This registers an error handler on
+      // the future synchronously, preventing Dart's zone from reporting it as
+      // an "unhandled future error" if completeError() fires in the write's
+      // flush gap (before `await ackFuture` can attach its own listener).
+      // `ignore()` does NOT swallow the error for `await ackFuture` — futures
+      // can have multiple listeners and the await listener still receives it.
+      _connectAckCompleter = Completer<void>();
+      final ackFuture = _connectAckCompleter!.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException(
+            'Server did not respond to initial PING after CONNECT'),
+      );
+      ackFuture.ignore(); // register error handler now, before any await
+      try {
+        await _transport.write(NatsEncoder.ping());
+        await ackFuture;
+      } catch (e) {
+        rethrow;
+      } finally {
+        _connectAckCompleter = null;
+      }
 
       // Connection complete
       _isConnected = true;
@@ -466,8 +507,12 @@ class NatsConnection {
         }
         break;
       case MessageType.ok:
-        // Complete the +OK wait (used in verbose mode)
-        if (!_okCompleter.isCompleted) {
+        // Complete the connect-ack wait if pending (server sends +OK for CONNECT
+        // in verbose mode or some test servers send +OK to all commands).
+        if (_connectAckCompleter != null &&
+            !_connectAckCompleter!.isCompleted) {
+          _connectAckCompleter!.complete();
+        } else if (!_okCompleter.isCompleted) {
           _okCompleter.complete();
         }
         break;
@@ -475,8 +520,13 @@ class NatsConnection {
         _respondPong();
         break;
       case MessageType.pong:
-        // Reset pending pings counter on PONG receipt
+        // Reset pending pings counter on PONG receipt.
         _pendingPings = 0;
+        // Complete the connect-ack wait if pending (initial PING after CONNECT).
+        if (_connectAckCompleter != null &&
+            !_connectAckCompleter!.isCompleted) {
+          _connectAckCompleter!.complete();
+        }
         break;
       case MessageType.msg:
       case MessageType.hmsg:
@@ -487,8 +537,20 @@ class NatsConnection {
         }
         break;
       case MessageType.err:
-        // Handle server error
-        _statusController.add(ConnectionStatus.closed);
+        // Handle server error.
+        // If we are in the connect-ack phase (waiting for PONG after CONNECT),
+        // propagate the error so _connect() can throw to the caller.
+        if (_connectAckCompleter != null &&
+            !_connectAckCompleter!.isCompleted) {
+          final errMsg = msg.payload != null
+              ? utf8.decode(msg.payload!)
+              : 'Authorization Violation';
+          _connectAckCompleter!
+              .completeError(StateError('NATS server error: $errMsg'));
+        } else {
+          _isConnected = false;
+          _statusController.add(ConnectionStatus.closed);
+        }
         break;
     }
   }
@@ -633,6 +695,14 @@ class NatsConnection {
           // Send CONNECT
           await _sendConnect();
 
+          // Mark connected immediately after CONNECT is accepted.
+          // SUB replay, buffer flush, and timer setup are housekeeping that
+          // happens on an already-live connection.
+          _isConnected = true;
+          _isReconnecting = false;
+          _statusController.add(ConnectionStatus.connected);
+          _startPingTimer();
+
           // Replay all active subscriptions (re-send SUB commands)
           for (final sub in _subscriptions.values.toList()) {
             if (sub.isActive) {
@@ -667,13 +737,6 @@ class NatsConnection {
           }
           _publishBuffer.clear();
 
-          // Connection re-established
-          _isConnected = true;
-          _isReconnecting = false;
-          _statusController.add(ConnectionStatus.connected);
-
-          // Restart PING keepalive timer after reconnect
-          _startPingTimer();
           return;
         } catch (e) {
           attempts++;

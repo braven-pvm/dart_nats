@@ -1,0 +1,49 @@
+# NATS server for local development and integration testing.
+#
+# Usage:
+#   docker-compose up -d          # Start NATS in background
+#   docker-compose down           # Stop and remove containers
+#   docker-compose logs -f nats   # Tail server logs
+#
+# Ports:
+#   4222  — Client connections (TCP / NATS protocol)
+#   8222  — HTTP monitoring  →  http://localhost:8222
+#   6222  — Cluster routing  (unused for single-node, reserved)
+#
+# JetStream is enabled by default.
+# NATS monitoring UI (if installed):  npx nats-top
+
+services:
+  nats:
+    image: nats:latest
+    container_name: nats-dev
+    ports:
+      - "4222:4222"   # Client
+      - "8222:8222"   # Monitoring
+      - "6222:6222"   # Cluster
+    command: >
+      --jetstream
+      --store_dir /data
+      --http_port 8222
+      --name nats-dev
+    volumes:
+      - nats-data:/data
+    restart: unless-stopped
+
+  # Optional: NATS server with token auth (for auth_test.dart)
+  nats-auth:
+    image: nats:latest
+    container_name: nats-auth
+    ports:
+      - "4223:4222"
+    command: >
+      --jetstream
+      --auth mytoken
+      --http_port 8223
+      --name nats-auth
+    profiles:
+      - auth
+    restart: unless-stopped
+
+volumes:
+  nats-data:

@@ -111,6 +111,10 @@ class WebSocketTransport implements Transport {
       _isConnected = true;
     } catch (e) {
       _isConnected = false;
+      // Force-close the channel to release the underlying TCP socket.
+      // Use ignore() so we don't await a potentially hanging sink.close().
+      _channel?.sink.close().ignore();
+      _channel = null;
       if (_errorsController?.isClosed == false) {
         _errorsController?.add(e);
       }

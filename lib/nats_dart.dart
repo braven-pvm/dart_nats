@@ -152,4 +152,4 @@ export 'src/jetstream/consumer_manager.dart';
 export 'src/jetstream/pull_consumer.dart';
 export 'src/jetstream/js_msg.dart';
 export 'src/kv/kv.dart';
-export 'src/kv/kv_entry.dart';
+// export 'src/kv/kv_entry.dart';

@@ -89,8 +89,9 @@ void main() {
         // ignore: avoid_print
         print('p99 latency: ${p99ms.toStringAsFixed(2)}ms');
 
-        // Clean up responder
-        await responderFuture;
+        // responderFuture is NOT awaited here: the subscription stays open until
+        // conn.close() in the finally block, at which point asFuture() resolves.
+        // Awaiting it here would deadlock (subscription only ends on close).
       } finally {
         await conn.close();
       }
