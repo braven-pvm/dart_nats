@@ -9,8 +9,8 @@ import 'message.dart';
 /// Handles MSG, HMSG, INFO, PING, PONG, +OK, and -ERR commands.
 /// Multi-frame message assembly is handled internally via buffering.
 class NatsParser {
-  final _buffer = BytesBuilder(copy: false);
-  final _controller = StreamController<NatsMessage>.broadcast();
+  final _buffer = BytesBuilder();
+  final _controller = StreamController<NatsMessage>.broadcast(sync: true);
 
   Stream<NatsMessage> get messages => _controller.stream;
 
@@ -34,10 +34,10 @@ class NatsParser {
       try {
         switch (op) {
           case 'MSG':
-            _parseMsgOrHmsg(controlLine, bytes, false);
+            if (!_parseMsgOrHmsg(controlLine, bytes, false)) return;
             break;
           case 'HMSG':
-            _parseMsgOrHmsg(controlLine, bytes, true);
+            if (!_parseMsgOrHmsg(controlLine, bytes, true)) return;
             break;
           case 'INFO':
             _emitInfo(controlLine);
@@ -60,17 +60,50 @@ class NatsParser {
             _advance(crlfIdx + 2);
             break;
           default:
-            // Unknown op — skip line
+            // Unknown op — skip line with error
+            _emitParseError(
+              controlLine,
+              'Unknown protocol operation',
+              'Operation "$op" is not recognized by this parser',
+              bytes,
+            );
             _advance(crlfIdx + 2);
         }
       } catch (e) {
-        // Parse error — skip this line and continue
+        // Parse error — emit actionable error and skip this line
+        _emitParseError(
+          controlLine,
+          'Parse error',
+          e.toString(),
+          bytes,
+        );
         _advance(crlfIdx + 2);
       }
     }
   }
 
-  void _parseMsgOrHmsg(String line, Uint8List buf, bool hasHeaders) {
+  /// Emit actionable parse error with context for debugging.
+  void _emitParseError(
+    String controlLine,
+    String errorType,
+    String details,
+    Uint8List buffer,
+  ) {
+    final safeLine = controlLine.length > 100
+        ? '${controlLine.substring(0, 100)}...'
+        : controlLine;
+
+    final bufferInfo = 'buffer=${buffer.length} bytes';
+
+    final message = '$errorType: $details. '
+        'Control line: "$safeLine" ($bufferInfo). '
+        'See https://docs.nats.io/reference/reference-protocols/nats-protocol';
+
+    _emit(NatsMessage.err(message));
+  }
+
+  /// Returns true if a complete message was consumed, false if more bytes are needed.
+  bool _parseMsgOrHmsg(String line, Uint8List buf, bool hasHeaders) {
     final parts = line.split(' ')..removeWhere((e) => e.isEmpty);
 
     String subject;
@@ -96,7 +129,9 @@ class NatsParser {
         hdrBytes = int.parse(parts[3]);
         totalBytes = int.parse(parts[4]);
       } else {
-        throw FormatException('Invalid HMSG format: $line');
+        throw FormatException(
+          'Invalid HMSG format: expected 5-6 parts, got ${parts.length} in "$line"',
+        );
       }
     } else {
       // MSG <subject> <sid> [reply] <totalBytes>
@@ -111,16 +146,17 @@ class NatsParser {
         // No reply-to
         totalBytes = int.parse(parts[3]);
       } else {
-        throw FormatException('Invalid MSG format: $line');
+        throw FormatException(
+          'Invalid MSG format: expected 4-5 parts, got ${parts.length} in "$line"',
+        );
       }
     }
-
     final ctrlLen = line.length + 2; // +2 for \r\n
     final requiredLen = ctrlLen + totalBytes + 2; // +2 for trailing \r\n
 
     if (buf.length < requiredLen) {
       // Incomplete message — wait for more bytes
-      return;
+      return false;
     }
 
     Map<String, List<String>>? headers;
@@ -151,6 +187,7 @@ class NatsParser {
     ));
 
     _advance(requiredLen);
+    return true;
   }
 
   ({
@@ -218,10 +255,12 @@ class NatsParser {
     }
   }
 
-  void _advance(int bytes) {
+  void _advance(int count) {
     final current = _buffer.toBytes();
     _buffer.clear();
-    _buffer.add(current.sublist(bytes));
+    if (count < current.length) {
+      _buffer.add(current.sublist(count));
+    }
   }
 
   int _findCRLF(Uint8List bytes) {

@@ -1,9 +1,12 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:io';
-
 import 'tcp_transport.dart';
 import 'transport.dart';
 import 'websocket_transport.dart';
+
+/// Re-exports platform-specific transport implementations for native platforms.
+/// (Definitions are in transport_factory.dart)
+export 'tcp_transport.dart';
+export 'websocket_transport.dart';
+export 'transport.dart';
 
 /// Create transport for native platforms (iOS, Android, macOS, Windows, Linux, Dart server).
 /// Prefers TCP for nats:// URIs, uses WebSocket for ws:// and wss:// URIs.
@@ -12,5 +15,9 @@ Transport createTransport(Uri uri) {
     return WebSocketTransport(uri);
   }
   // Default to TCP for nats://, nats+tls://, or any other scheme
-  return TcpTransport(uri.host, uri.port);
+  // When no port is specified (uri.port == 0), default to 4222
+  final port = uri.port == 0 ? 4222 : uri.port;
+  // Enable TLS for nats+tls:// scheme
+  final useTls = uri.scheme == 'nats+tls';
+  return TcpTransport(host: uri.host, port: port, useTls: useTls);
 }

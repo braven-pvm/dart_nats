@@ -38,22 +38,30 @@ class NatsMessage {
       );
 
   /// Whether this is a flow control request (100 FlowControl Request).
+  ///
+  /// Returns true if statusCode is 100 and statusDesc contains 'Flow'.
+  /// Used in JetStream for backpressure management.
   bool get isFlowCtrl =>
       statusCode == 100 && (statusDesc?.contains('Flow') ?? false);
 
   /// Whether this is an idle heartbeat (100 Idle Heartbeat).
+  ///
+  /// Returns true if statusCode is 100 and statusDesc contains 'Idle'.
+  /// Sent by server to keep connection alive during periods of inactivity.
   bool get isHeartbeat =>
       statusCode == 100 && (statusDesc?.contains('Idle') ?? false);
 
   /// Whether this is a "no messages" response (404).
+  ///
+  /// Returns true if statusCode is 404.
+  /// Indicates no messages available for pull consumer fetch.
   bool get isNoMsg => statusCode == 404;
 
   /// Whether this is a timeout response (408).
+  ///
+  /// Returns true if statusCode is 408.
+  /// Indicates a request timed out waiting for a response.
   bool get isTimeout => statusCode == 408;
-
-  /// Whether consumer was deleted (409 Consumer Deleted).
-  bool get isConsumerDeleted =>
-      statusCode == 409 && (statusDesc?.contains('Consumer Deleted') ?? false);
 
   /// Get first value of a header by name (case-insensitive).
   String? header(String name) {
