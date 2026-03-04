@@ -7,7 +7,9 @@ environment:
   sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
+  libusb: ^0.3.23+2
   web_socket_channel: ^2.4.0
+  win32: ^4.1.4
 
 dev_dependencies:
   lints: ^2.1.0
